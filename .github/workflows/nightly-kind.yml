@@ -1,0 +1,63 @@
+# A REAL check every night: a small Kubernetes cluster (kind) is created on GitHub's runner, the worker image is
+# built and loaded, and a short scenario runs end to end. The run folder and its Excel file are kept as artifacts.
+# Default: tools/check-batch.yaml (about 5 min in total). Choose a short scenario with "Run workflow" (about 40 min).
+name: Nightly real run (kind)
+
+on:
+  schedule:
+    - cron: "0 2 * * *"          # every night at 02:00 UTC
+  workflow_dispatch:
+    inputs:
+      scenario:
+        description: "Scenario name or file (e.g. normal-day-short)"
+        default: "tools/check-batch.yaml"
+      seed:
+        description: "Seed"
+        default: "42"
+
+permissions:
+  contents: read
+
+jobs:
+  kind-run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    env:
+      SCENARIO: ${{ github.event.inputs.scenario || 'tools/check-batch.yaml' }}
+      SEED: ${{ github.event.inputs.seed || '42' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Install
+        run: pip install pyyaml kubernetes redis openpyxl
+      - name: Create a kind cluster (1 control plane + 1 worker)
+        uses: helm/kind-action@v1
+        with:
+          cluster_name: loadkit
+          config: deploy/kind.yaml
+      - name: Install metrics-server
+        run: |
+          kubectl apply -f https://github.com/kubernetes-sigs/metrics-server/releases/latest/download/components.yaml
+          kubectl -n kube-system patch deployment metrics-server --type=json \
+            -p='[{"op":"add","path":"/spec/template/spec/containers/0/args/-","value":"--kubelet-insecure-tls"}]'
+          kubectl -n kube-system rollout status deployment metrics-server --timeout=180s
+          for i in $(seq 1 30); do kubectl top nodes && break; sleep 10; done
+      - name: Build and load the worker image
+        run: |
+          docker build -t loadkit-worker:0.1.0 worker
+          kind load docker-image loadkit-worker:0.1.0 --name loadkit
+      - name: Run the scenario
+        run: python -m loadkit run "$SCENARIO" --seed "$SEED"
+      - name: Summary
+        if: always()
+        run: |
+          for f in runs/*/README.txt; do echo '```' >> "$GITHUB_STEP_SUMMARY"; cat "$f" >> "$GITHUB_STEP_SUMMARY"; echo '```' >> "$GITHUB_STEP_SUMMARY"; done
+          kubectl get pods -A -o wide | tail -40 || true
+      - name: Keep the run folder
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: kind-run-${{ github.run_number }}
+          path: runs/
+          retention-days: 30

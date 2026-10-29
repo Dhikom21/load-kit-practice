@@ -1,0 +1,109 @@
+# The kit's pipeline. Runs on GitHub's computers ("runners") — nothing to install.
+#   check     → style, scenario files, course rules                 (every push and pull request, < 1 min)
+#   test      → all unit tests, no cluster needed                    (every push and pull request, 1–2 min)
+#   simulate  → short scenarios on the simulated cluster, compared
+#               with main; report as a pull-request comment          (pull requests and manual runs, ~1 min)
+# The real-cluster check runs every night in nightly-kind.yml; the worker image is built in image.yml.
+name: CI
+
+on:
+  push:                          # every push to any branch
+  pull_request:                  # every pull request (also when new commits are pushed to it)
+  workflow_dispatch:             # a "Run workflow" button in the Actions tab
+
+concurrency:                     # a newer push to the same branch cancels the older, still running pipeline
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read                 # the pipeline may read the code, nothing more ...
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4                       # copy the repository onto the runner
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Install
+        run: pip install pyyaml kubernetes redis openpyxl ruff
+      - name: Code style and obvious mistakes (ruff)
+        run: ruff check .
+      - name: All scenario files are valid
+        run: python -m loadkit validate
+      - name: Course rules (no secrets, no memory scenarios in the student copy)
+        run: python ci/policy.py
+      - name: UI JavaScript parses
+        run: for f in ui/app.js ui/panels/*.js; do node --check "$f"; done
+
+  test:
+    runs-on: ubuntu-latest
+    needs: check                                        # only if the quick checks passed
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Install
+        run: pip install pyyaml kubernetes redis openpyxl coverage
+      - name: Unit tests (with coverage)
+        run: coverage run -m unittest discover -s tests -t . -v
+      - name: Coverage summary
+        if: always()
+        run: |
+          echo '### Test coverage' >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          coverage report --include='loadkit/*,worker/*,ci/*' | tail -25 >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+
+  simulate:
+    runs-on: ubuntu-latest
+    needs: test
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    permissions:
+      contents: read
+      pull-requests: write                              # ... except this job, which may comment on the pull request
+    steps:
+      - uses: actions/checkout@v4                       # this change
+      - uses: actions/checkout@v4                       # the version it is compared with (main / the PR's base)
+        with:
+          ref: ${{ github.event.pull_request.base.sha || github.event.repository.default_branch }}
+          path: base
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Install
+        run: pip install pyyaml kubernetes redis openpyxl
+      - name: Simulate this change
+        run: python ci/simulate.py run --out ci-out/head
+      - name: Simulate the base version
+        run: python ci/simulate.py run --repo base --out ci-out/base
+      - name: Compare and write the report
+        run: |
+          python ci/simulate.py compare ci-out/base ci-out/head --md ci-out/report.md \
+            --base-label "${{ github.event.pull_request.base.ref || github.event.repository.default_branch }}"
+          cat ci-out/report.md >> "$GITHUB_STEP_SUMMARY"
+      - name: Keep the Excel files and numbers
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulation-${{ github.run_number }}
+          path: |
+            ci-out/head/excel
+            ci-out/head/summary.json
+            ci-out/head/compare.json
+            ci-out/report.md
+          retention-days: 30
+      - name: Post the report on the pull request
+        if: github.event_name == 'pull_request'
+        continue-on-error: true                         # e.g. pull requests from forks may not comment
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = fs.readFileSync('ci-out/report.md', 'utf8');
+            const marker = '<!-- loadkit-simulation-report -->';
+            const {owner, repo} = context.repo;
+            const issue_number = context.issue.number;
+            const comments = await github.paginate(github.rest.issues.listComments, {owner, repo, issue_number});
+            const old = comments.find(c => c.body && c.body.includes(marker));
+            if (old) await github.rest.issues.updateComment({owner, repo, comment_id: old.id, body});
+            else await github.rest.issues.createComment({owner, repo, issue_number, body});

@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Load Scenario Kit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Exo:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/theme.css">
+</head>
+<body>
+<header class="top">
+  <div class="brand"><span class="brand-hex">⬡</span> Load Scenario Kit</div>
+  <div class="spacer"></div>
+  <span class="pill" id="cluster" title=""></span>
+  <span class="pill" id="status"><span class="dot" id="statusDot"></span><span id="statusText">idle</span></span>
+</header>
+<div class="layout">
+  <aside>
+    <h3>Scenarios</h3>
+    <div id="scenarios"></div>
+    <h3>Loads in this scenario</h3>
+    <div id="loads"></div>
+    <h3>Past runs</h3>
+    <select id="pastRuns" style="width:100%"><option value="">Open a past run</option></select>
+  </aside>
+  <main>
+    <div class="hero">
+      <div>
+        <h1 id="scTitle">Choose a scenario</h1>
+        <div class="desc" id="scDesc"></div>
+        <div class="story" id="scStory"></div>
+        <ul class="look" id="scLook"></ul>
+      </div>
+      <div class="controls">
+        <label class="inl">Seed <input type="number" id="seed" value="42"></label>
+        <button class="primary" id="startBtn">▶ Start</button>
+        <button id="stopSoft" title="Stop: no new events; running batch runs may finish (drain)">■ Stop</button>
+        <button class="danger" id="stopHard" title="Stop now and delete everything the run created">✕ Stop now</button>
+      </div>
+    </div>
+    <div class="replay" id="replay" style="display:none">
+      <button class="small" id="replayPlay">▶ Replay</button>
+      <input type="range" id="replayT" min="0" max="100" step="5" value="100" aria-label="Replay time">
+      <span id="replayClock" class="muted" style="min-width:90px;text-align:right"></span>
+      <button class="small" id="exportBtn" title="Download this run as an Excel workbook">⤓ Export to Excel</button>
+    </div>
+    <div class="banner" id="banner" style="display:none"></div>
+    <div class="grid" id="mainPanels"></div>
+    <section class="advanced" id="advanced">
+      <div class="adv-head" id="advHead"><span class="chev">▸</span> Advanced</div>
+      <div class="adv-body"><div class="grid" id="advPanels"></div></div>
+    </section>
+  </main>
+</div>
+<script src="/app.js"></script>
+</body>
+</html>

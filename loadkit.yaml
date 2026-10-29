@@ -1,0 +1,25 @@
+# Load Scenario Kit settings. (The plan calls this loadkit.toml; YAML is used so no extra parser is needed.)
+# Remove a name from a list to switch that plugin off; the rest keeps working.
+plugins:
+  load_types: [batch, stream, users]
+  runners: [kubernetes]
+  scalers: [target-tracking, concurrency, none, step]   # CONNECTION 2 (step example): switched on here
+  metrics: []                           # prometheus arrives in milestone M7 (metrics-server is used until then)
+  # main view first, then the panels under "Advanced"
+  ui_panels: [machine, maths, health-cards, story, blame,
+              timeline, health, live-load, replicas, shop-clue, memory, compare, diary]
+group: null                             # sharing a cluster with other groups? set e.g. g3 (and kubernetes.node below)
+allow_flags: []                         # student copy: memory scenarios are not allowed
+naming: {mode: plain}                   # plain | blind (blind arrives with milestone M7b)
+caps: {max_total_cores: 16, max_total_memory: 64Gi}
+phases: {warmup: 2m, baseline: 5m, drain: 10m}
+engine: {tick: 1.0, decision_interval: 15.0, metrics_interval: 15.0}
+server: {host: 127.0.0.1, port: 8765}
+runs_dir: runs
+kubernetes:
+  image: loadkit-worker:0.1.0           # built with `make image`; on kind loaded with `make kind-load`
+  namespace_prefix: loadkit             # loadkit-system, loadkit-batch, loadkit-stream, loadkit-users
+  node: null                            # your machine: node name or label (role=experiment-3); null = pick a free one
+  metrics_every: 5                      # seconds between metrics-server polls
+  pod_poll_every: 2                     # seconds between pod status polls
+  setup_timeout: 300

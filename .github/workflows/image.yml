@@ -1,0 +1,31 @@
+# Builds the worker image (the code that runs inside the pods) whenever worker/ changes, and publishes it to
+# GitHub's container registry (ghcr.io) from the main branch.
+name: Worker image
+
+on:
+  push:
+    paths: ["worker/**", ".github/workflows/image.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write                # needed to publish the image to ghcr.io
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: docker build -t loadkit-worker:ci worker
+      - name: Smoke test (the image starts and its CPU check works)
+        run: docker run --rm loadkit-worker:ci calibrate --seconds 1
+      - name: Publish (main branch only)
+        if: github.ref_name == github.event.repository.default_branch
+        run: |
+          owner="${GITHUB_REPOSITORY_OWNER,,}"                     # registry names must be lowercase
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          for tag in latest "${GITHUB_SHA::7}"; do
+            docker tag loadkit-worker:ci "ghcr.io/$owner/loadkit-worker:$tag"
+            docker push "ghcr.io/$owner/loadkit-worker:$tag"
+          done

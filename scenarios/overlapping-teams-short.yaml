@@ -1,0 +1,89 @@
+name: overlapping-teams-short
+set: teaching                                  # teaching = short version (20-30 min); full = long version
+description: (30-min teaching version) Batch jobs every 30, 45 and 60 minutes drift in and out of overlap — intermittent, hard-to-spot slowdowns.
+story: Three teams run regular jobs on their own schedules. Most of the time they miss each other; sometimes they meet.
+look_for:
+  - slowdowns only at the moments when two or three runs meet
+  - the same job is fine at one run and slow at the next
+duration: 30m                                  # how long the scenario runs
+day_length: 30m                                # a 24 h day is squeezed into this time
+day_start_hour: 8                              # day time when the scenario starts
+seed: 42                                       # day number for the random choices (same seed = same plan)
+capacity_hint: {cpu: 4, memory: 8Gi}           # the machine size this scenario is written for
+phases: {warmup: 1m, baseline: 2m, drain: 5m}  # warm-up, baseline and drain for this scenario
+preemption: off                              # may high-priority pods push out lower-priority ones?
+placement: {mode: together}                    # together = all pods on one machine
+loads:
+  - name: report
+    type: batch
+    team: finance                              # who owns it
+    every: 5m                                  # a new run is due this often
+    first: 20s                                 # the first run is due at this time
+    jitter: 30s                                # each run starts up to this much later (random, from the seed)
+    work: {units: 315, unit: order-batch, cost_per_unit: 1.0s} # 315 × 1 s = 315 CPU-s → normal run ≈ 2.3 min on 2.25 cores
+    work_spread: 0%                            # each run gets ± this much work (random, from the seed)
+    parallelism: 1                             # pods working on one run
+    intensity: 2.25                            # cores each pod tries to use
+    request: 550m                              # CPU the pod books = its share when the machine is full
+    limit: none                                # no CPU cap: may use free cores
+    priority: normal                           # high | normal | low (who may push out whom)
+    concurrency_policy: allow                  # previous run still working? allow | forbid | replace
+    max_concurrent_runs: null                  # no limit on runs at the same time
+    deadline_factor: 4                         # a run is stopped after this × its normal time
+    checkpoint: false                          # keep finished work when a pod is killed?
+    memory: {request: 256Mi, limit: 1Gi, base: 200Mi, peak: 400Mi, shape: ramp} # memory: booked, max, at start, peak, how it grows
+    health: {metric: runtime_ratio, threshold: 1.3} # unhealthy if a run takes > 1.3 × its normal time
+  - name: etl
+    type: batch
+    team: data                                 # who owns it
+    every: 450s                                # a new run is due this often
+    first: 100s                                # the first run is due at this time
+    jitter: 30s                                # each run starts up to this much later (random, from the seed)
+    work: {units: 393, unit: table, cost_per_unit: 1.0s} # 393 × 1 s = 393 CPU-s → normal run ≈ 2.9 min on 2.25 cores
+    work_spread: 0%                            # each run gets ± this much work (random, from the seed)
+    parallelism: 1                             # pods working on one run
+    intensity: 2.25                            # cores each pod tries to use
+    request: 550m                              # CPU the pod books = its share when the machine is full
+    limit: none                                # no CPU cap: may use free cores
+    priority: normal                           # high | normal | low (who may push out whom)
+    concurrency_policy: allow                  # previous run still working? allow | forbid | replace
+    max_concurrent_runs: null                  # no limit on runs at the same time
+    deadline_factor: 4                         # a run is stopped after this × its normal time
+    checkpoint: false                          # keep finished work when a pod is killed?
+    memory: {request: 256Mi, limit: 1Gi, base: 200Mi, peak: 400Mi, shape: ramp} # memory: booked, max, at start, peak, how it grows
+    health: {metric: runtime_ratio, threshold: 1.3} # unhealthy if a run takes > 1.3 × its normal time
+  - name: backup
+    type: batch
+    team: it                                   # who owns it
+    every: 10m                                 # a new run is due this often
+    first: 200s                                # the first run is due at this time
+    jitter: 30s                                # each run starts up to this much later (random, from the seed)
+    work: {units: 315, unit: file, cost_per_unit: 1.5s} # 315 × 1.5 s = 472.5 CPU-s → normal run ≈ 3.5 min on 2.25 cores
+    work_spread: 0%                            # each run gets ± this much work (random, from the seed)
+    parallelism: 1                             # pods working on one run
+    intensity: 2.25                            # cores each pod tries to use
+    request: 550m                              # CPU the pod books = its share when the machine is full
+    limit: none                                # no CPU cap: may use free cores
+    priority: normal                           # high | normal | low (who may push out whom)
+    concurrency_policy: allow                  # previous run still working? allow | forbid | replace
+    max_concurrent_runs: null                  # no limit on runs at the same time
+    deadline_factor: 4                         # a run is stopped after this × its normal time
+    checkpoint: false                          # keep finished work when a pod is killed?
+    memory: {request: 256Mi, limit: 1Gi, base: 200Mi, peak: 400Mi, shape: ramp} # memory: booked, max, at start, peak, how it grows
+    health: {metric: runtime_ratio, threshold: 1.3} # unhealthy if a run takes > 1.3 × its normal time
+  - name: shop-users
+    type: users
+    team: webshop                              # who owns it
+    users: 34                                  # users when the day pattern is 1.0 → each ≈ 0.98 requests/s × 20 ms = 0.67 cores
+    daily_pattern: office-day                  # how the level changes over the day
+    peaks: []                                  # extra busy periods, e.g. [{at: 40m, x: 4, length: 15m}]
+    think_time: 1s                             # each user waits this long between requests
+    cost_per_request: 20ms                     # CPU work for one request
+    timeout: 5s                                # a user gives up (error) after this long
+    shop_replicas: [2, 6]                      # [min, max] shop pods
+    scaler: {name: concurrency, target_in_flight: 4, stabilization: 2m} # how pods are added and removed
+    request: 350m                              # CPU the pod books = its share when the machine is full
+    limit: none                                # no CPU cap: may use free cores
+    priority: high                             # high | normal | low (who may push out whom)
+    memory: {request: 128Mi, limit: 256Mi, base: 90Mi, per_in_flight: 1Mi} # memory: booked, max, base, per request in flight
+    health: {metric: latency_p95, threshold: 300ms, window: 60s, errors_max: 1%} # unhealthy if p95 > 300ms or errors > 1%

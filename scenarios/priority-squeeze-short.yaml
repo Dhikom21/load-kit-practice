@@ -1,0 +1,53 @@
+name: priority-squeeze-short
+set: teaching                                  # teaching = short version (20-30 min); full = long version
+description: (30-min teaching version) A high-priority stream scales up on a full node; preemption evicts the low-priority batch pods.
+story: The nightly ETL has run fine for months. Tonight the high-priority payment stream had a burst — and the ETL took three times as long.
+look_for:
+  - consumers_scaled followed by pod_preempted on the ETL pods
+  - ETL progress is lost at each preemption and its run time explodes
+  - nothing changed in the ETL job itself
+duration: 30m                                  # how long the scenario runs
+day_length: 30m                                # a 24 h day is squeezed into this time
+day_start_hour: 0                              # day time when the scenario starts
+seed: 42                                       # day number for the random choices (same seed = same plan)
+capacity_hint: {cpu: 4, memory: 8Gi}           # the machine size this scenario is written for
+phases: {warmup: 1m, baseline: 2m, drain: 5m}  # warm-up, baseline and drain for this scenario
+preemption: on                                # may high-priority pods push out lower-priority ones?
+placement: {mode: together}                    # together = all pods on one machine
+loads:
+  - name: nightly-etl
+    type: batch
+    team: data                                 # who owns it
+    every: 45m                                 # a new run is due this often
+    first: 75s                                 # the first run is due at this time
+    jitter: 0m                                 # each run starts up to this much later (random, from the seed)
+    work: {units: 450, unit: table, cost_per_unit: 4.0s} # 450 × 4 s = 1800 CPU-s → normal run ≈ 10.0 min on 3 cores
+    work_spread: 0%                            # each run gets ± this much work (random, from the seed)
+    parallelism: 4                             # pods working on one run
+    intensity: 0.75                            # cores each pod tries to use
+    request: 650m                              # CPU the pod books = its share when the machine is full
+    limit: none                                # no CPU cap: may use free cores
+    priority: low                              # high | normal | low (who may push out whom)
+    concurrency_policy: allow                  # previous run still working? allow | forbid | replace
+    max_concurrent_runs: null                  # no limit on runs at the same time
+    deadline_factor: 4                         # a run is stopped after this × its normal time
+    checkpoint: false                          # keep finished work when a pod is killed?
+    memory: {request: 256Mi, limit: 1Gi, base: 200Mi, peak: 400Mi, shape: ramp} # memory: booked, max, at start, peak, how it grows
+    health: {metric: runtime_ratio, threshold: 1.5} # unhealthy if a run takes > 1.5 × its normal time
+  - name: payments
+    type: stream
+    team: payments                             # who owns it
+    base_rate: 33.3                            # events per second → 33.3 × 10 ms = 0.33 cores
+    daily_pattern: flat                        # how the level changes over the day
+    bursts: {at: [5m, 14m], x: 8, length: [2m, 2m], per_hour: 0} # random/fixed bursts: per_hour, x = how many times more events, length
+    work_per_event: 10ms                       # CPU work for one event
+    partitions: 8                              # events are split over this many partitions
+    consumers: [1, 8]                          # [min, max] consumer pods
+    threads_per_consumer: 1                    # events one consumer pod handles at once
+    prefetch: 50                               # events a consumer takes at once
+    scaler: {name: target-tracking, cpu_target: 70, backlog_per_consumer: 100, stabilization: 2m} # how pods are added and removed
+    request: 350m                              # CPU the pod books = its share when the machine is full
+    limit: none                                # no CPU cap: may use free cores
+    priority: high                             # high | normal | low (who may push out whom)
+    memory: {request: 128Mi, limit: 512Mi, base: 100Mi, per_buffered_event: 2Ki} # memory: booked, max, base, per waiting event
+    health: {metric: event_age, threshold: 30s} # unhealthy if the oldest event waits > 30s

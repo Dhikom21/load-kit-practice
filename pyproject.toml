@@ -1,0 +1,24 @@
+[project]
+name = "loadkit"
+version = "0.1.0"
+description = "Load Scenario Kit: repeatable batch / stream / user-traffic contention scenarios with a ground-truth diary"
+requires-python = ">=3.10"
+dependencies = ["PyYAML>=6", "kubernetes>=29", "redis>=5", "openpyxl>=3"]
+
+[project.scripts]
+loadkit = "loadkit.cli:main"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["loadkit*"]
+
+[tool.ruff]
+line-length = 130
+extend-exclude = ["runs"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]        # pycodestyle errors/warnings + pyflakes (real mistakes: unused names, undefined names ...)
+ignore = ["E731", "E741"]       # allow small lambdas and the variable name "l"

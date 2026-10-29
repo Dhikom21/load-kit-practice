@@ -1,0 +1,109 @@
+name: midnight-pile-up-short
+set: teaching                                  # teaching = short version (20-30 min); full = long version
+description: (30-min teaching version) Three teams' batch jobs start around midnight and overlap; a steady stream and the shop run alongside.
+story: Finance, IT and the data team each scheduled "a nightly job". Nobody planned for them to run at the same time.
+look_for:
+  - stacked CPU goes above the capacity line when the runs overlap
+  - batch runs take longer than their normal estimate (filled bar longer than outlined bar)
+  - all three jobs become unhealthy, each slowed by the other two (impact panel)
+  - the shop's in-flight requests rise a little although night traffic is low
+duration: 30m                                  # how long the scenario runs
+day_length: 24h                                # a 24 h day is squeezed into this time
+day_start_hour: 23.5                           # day time when the scenario starts
+seed: 42                                       # day number for the random choices (same seed = same plan)
+capacity_hint: {cpu: 4, memory: 8Gi}           # the machine size this scenario is written for
+phases: {warmup: 1m, baseline: 2m, drain: 5m}  # warm-up, baseline and drain for this scenario
+preemption: on                                # may high-priority pods push out lower-priority ones?
+placement: {mode: together}                    # together = all pods on one machine
+loads:
+  - name: report
+    type: batch
+    team: finance                              # who owns it
+    every: 10m                                 # a new run is due this often
+    first: 14m                                 # the first run is due at this time
+    jitter: 45s                                # each run starts up to this much later (random, from the seed)
+    work: {units: 1000, unit: order-batch, cost_per_unit: 0.45s} # 1000 × 0.45 s = 450 CPU-s → normal run ≈ 2.5 min on 3 cores
+    work_spread: 0%                            # each run gets ± this much work (random, from the seed)
+    parallelism: 2                             # pods working on one run
+    intensity: 1.5                             # cores each pod tries to use
+    request: 500m                              # CPU the pod books = its share when the machine is full
+    limit: none                                # no CPU cap: may use free cores
+    priority: normal                           # high | normal | low (who may push out whom)
+    concurrency_policy: allow                  # previous run still working? allow | forbid | replace
+    max_concurrent_runs: null                  # no limit on runs at the same time
+    deadline_factor: 4                         # a run is stopped after this × its normal time
+    checkpoint: false                          # keep finished work when a pod is killed?
+    memory: {request: 256Mi, limit: 1Gi, base: 200Mi, peak: 400Mi, shape: ramp} # memory: booked, max, at start, peak, how it grows
+    health: {metric: runtime_ratio, threshold: 1.5} # unhealthy if a run takes > 1.5 × its normal time
+  - name: backup
+    type: batch
+    team: it                                   # who owns it
+    kind: backup
+    every: 10m                                 # a new run is due this often
+    first: 14m                                 # the first run is due at this time
+    jitter: 45s                                # each run starts up to this much later (random, from the seed)
+    work: {units: 125, unit: file, cost_per_unit: 3.8s} # 125 × 3.8 s = 475 CPU-s → normal run ≈ 4.0 min on 2 cores
+    work_spread: 0%                            # each run gets ± this much work (random, from the seed)
+    parallelism: 1                             # pods working on one run
+    intensity: 2.0                             # cores each pod tries to use
+    request: 500m                              # CPU the pod books = its share when the machine is full
+    limit: none                                # no CPU cap: may use free cores
+    priority: normal                           # high | normal | low (who may push out whom)
+    concurrency_policy: allow                  # previous run still working? allow | forbid | replace
+    max_concurrent_runs: null                  # no limit on runs at the same time
+    deadline_factor: 4                         # a run is stopped after this × its normal time
+    checkpoint: false                          # keep finished work when a pod is killed?
+    memory: {request: 256Mi, limit: 1Gi, base: 200Mi, peak: 400Mi, shape: ramp} # memory: booked, max, at start, peak, how it grows
+    health: {metric: runtime_ratio, threshold: 1.5} # unhealthy if a run takes > 1.5 × its normal time
+  - name: training
+    type: batch
+    team: data                                 # who owns it
+    every: 15m                                 # a new run is due this often
+    first: 14m                                 # the first run is due at this time
+    jitter: 45s                                # each run starts up to this much later (random, from the seed)
+    work: {units: 75, unit: chunk, cost_per_unit: 10s} # 75 × 10 s = 750 CPU-s → normal run ≈ 5.0 min on 2.5 cores
+    work_spread: 0%                            # each run gets ± this much work (random, from the seed)
+    parallelism: 1                             # pods working on one run
+    intensity: 2.5                             # cores each pod tries to use
+    request: 500m                              # CPU the pod books = its share when the machine is full
+    limit: none                                # no CPU cap: may use free cores
+    priority: low                              # high | normal | low (who may push out whom)
+    concurrency_policy: forbid                 # previous run still working? allow | forbid | replace
+    max_concurrent_runs: null                  # no limit on runs at the same time
+    deadline_factor: 4                         # a run is stopped after this × its normal time
+    checkpoint: false                          # keep finished work when a pod is killed?
+    memory: {request: 256Mi, limit: 1Gi, base: 200Mi, peak: 400Mi, shape: ramp} # memory: booked, max, at start, peak, how it grows
+    health: {metric: runtime_ratio, threshold: 1.5} # unhealthy if a run takes > 1.5 × its normal time
+  - name: telemetry
+    type: stream
+    team: telemetry                            # who owns it
+    base_rate: 40                              # events per second → 40 × 8 ms = 0.32 cores
+    daily_pattern: flat                        # how the level changes over the day
+    bursts: {per_hour: 4, x: 3, length: [30s, 1m]} # random/fixed bursts: per_hour, x = how many times more events, length
+    work_per_event: 8ms                        # CPU work for one event
+    partitions: 4                              # events are split over this many partitions
+    consumers: [1, 4]                          # [min, max] consumer pods
+    threads_per_consumer: 1                    # events one consumer pod handles at once
+    prefetch: 50                               # events a consumer takes at once
+    scaler: {name: target-tracking, cpu_target: 70, backlog_per_consumer: 100, stabilization: 2m} # how pods are added and removed
+    request: 250m                              # CPU the pod books = its share when the machine is full
+    limit: none                                # no CPU cap: may use free cores
+    priority: normal                           # high | normal | low (who may push out whom)
+    memory: {request: 128Mi, limit: 512Mi, base: 100Mi, per_buffered_event: 2Ki} # memory: booked, max, base, per waiting event
+    health: {metric: event_age, threshold: 30s} # unhealthy if the oldest event waits > 30s
+  - name: shop-users
+    type: users
+    team: webshop                              # who owns it
+    users: 40                                  # users when the day pattern is 1.0 → each ≈ 0.98 requests/s × 20 ms = 0.78 cores
+    daily_pattern: office-day                  # how the level changes over the day
+    peaks: []                                  # extra busy periods, e.g. [{at: 40m, x: 4, length: 15m}]
+    think_time: 1s                             # each user waits this long between requests
+    cost_per_request: 20ms                     # CPU work for one request
+    timeout: 5s                                # a user gives up (error) after this long
+    shop_replicas: [2, 6]                      # [min, max] shop pods
+    scaler: {name: concurrency, target_in_flight: 4, stabilization: 2m} # how pods are added and removed
+    request: 300m                              # CPU the pod books = its share when the machine is full
+    limit: none                                # no CPU cap: may use free cores
+    priority: high                             # high | normal | low (who may push out whom)
+    memory: {request: 128Mi, limit: 256Mi, base: 90Mi, per_in_flight: 1Mi} # memory: booked, max, base, per request in flight
+    health: {metric: latency_p95, threshold: 300ms, window: 60s, errors_max: 1%} # unhealthy if p95 > 300ms or errors > 1%

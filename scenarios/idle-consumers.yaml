@@ -1,0 +1,31 @@
+name: idle-consumers
+description: A stream with 4 partitions; a burst makes the autoscaler add consumers beyond the partition count.
+story: The consumer group was given more pods, but the topic only has 4 partitions. Extra pods sit idle while the backlog keeps growing.
+look_for:
+  - replicas go above 4, but the backlog does not drop faster (consumers_idle events)
+  - processed rate is capped at what 4 consumers can do
+duration: 1h                                   # how long the scenario runs
+day_length: 1h                                 # a 24 h day is squeezed into this time
+day_start_hour: 12                             # day time when the scenario starts
+seed: 42                                       # day number for the random choices (same seed = same plan)
+capacity_hint: {cpu: 8, memory: 16Gi}          # the machine size this scenario is written for
+preemption: off                                # may high-priority pods push out lower-priority ones?
+placement: {mode: together}                    # together = all pods on one machine
+loads:
+  - name: clicks
+    type: stream
+    team: analytics                            # who owns it
+    base_rate: 40                              # events per second → 40 × 20 ms = 0.80 cores
+    daily_pattern: flat                        # how the level changes over the day
+    bursts: {at: [15m], x: 8, length: [10m, 10m], per_hour: 0} # random/fixed bursts: per_hour, x = how many times more events, length
+    work_per_event: 20ms                       # CPU work for one event
+    partitions: 4                              # events are split over this many partitions
+    consumers: [2, 9]                          # [min, max] consumer pods
+    threads_per_consumer: 1                    # events one consumer pod handles at once
+    prefetch: 50                               # events a consumer takes at once
+    scaler: {name: target-tracking, cpu_target: 70, backlog_per_consumer: 100, stabilization: 3m} # how pods are added and removed
+    request: 600m                              # CPU the pod books = its share when the machine is full
+    limit: none                                # no CPU cap: may use free cores
+    priority: normal                           # high | normal | low (who may push out whom)
+    memory: {request: 128Mi, limit: 512Mi, base: 100Mi, per_buffered_event: 2Ki} # memory: booked, max, base, per waiting event
+    health: {metric: event_age, threshold: 30s} # unhealthy if the oldest event waits > 30s

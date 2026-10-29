@@ -1,0 +1,16 @@
+# run outputs
+runs/
+# credentials: never commit kubeconfigs or tokens
+*kubeconfig*
+dhivya.yaml
+*.kubeconfig
+env.sh
+.env
+# python
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+ci-out/
+base/
+.coverage

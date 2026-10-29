@@ -1,0 +1,33 @@
+name: idle-consumers-short
+set: teaching                                  # teaching = short version (20-30 min); full = long version
+description: (20-min teaching version) A stream with 2 partitions; a burst makes the autoscaler add consumers beyond the partition count.
+story: The consumer group was given more pods, but the topic only has 2 partitions. Extra pods sit idle while the backlog keeps growing.
+look_for:
+  - replicas go above 2, but the backlog does not drop faster (consumers_idle events)
+  - processed rate is capped at what 2 consumers can do
+duration: 20m                                  # how long the scenario runs
+day_length: 20m                                # a 24 h day is squeezed into this time
+day_start_hour: 12                             # day time when the scenario starts
+seed: 42                                       # day number for the random choices (same seed = same plan)
+capacity_hint: {cpu: 4, memory: 8Gi}           # the machine size this scenario is written for
+phases: {warmup: 1m, baseline: 2m, drain: 5m}  # warm-up, baseline and drain for this scenario
+preemption: off                              # may high-priority pods push out lower-priority ones?
+placement: {mode: together}                    # together = all pods on one machine
+loads:
+  - name: clicks
+    type: stream
+    team: analytics                            # who owns it
+    base_rate: 20                              # events per second → 20 × 20 ms = 0.40 cores
+    daily_pattern: flat                        # how the level changes over the day
+    bursts: {at: [5m], x: 8, length: [5m, 5m], per_hour: 0} # random/fixed bursts: per_hour, x = how many times more events, length
+    work_per_event: 20ms                       # CPU work for one event
+    partitions: 2                              # events are split over this many partitions
+    consumers: [1, 6]                          # [min, max] consumer pods
+    threads_per_consumer: 1                    # events one consumer pod handles at once
+    prefetch: 50                               # events a consumer takes at once
+    scaler: {name: target-tracking, cpu_target: 70, backlog_per_consumer: 100, stabilization: 2m} # how pods are added and removed
+    request: 400m                              # CPU the pod books = its share when the machine is full
+    limit: none                                # no CPU cap: may use free cores
+    priority: normal                           # high | normal | low (who may push out whom)
+    memory: {request: 128Mi, limit: 512Mi, base: 100Mi, per_buffered_event: 2Ki} # memory: booked, max, base, per waiting event
+    health: {metric: event_age, threshold: 30s} # unhealthy if the oldest event waits > 30s

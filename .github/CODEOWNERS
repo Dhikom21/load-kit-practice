@@ -1,0 +1,20 @@
+# Who must approve changes to which files (GitHub asks these people to review the pull request).
+# Plugins, scenarios, tests and docs: any group member can approve.
+# The core and the pipeline: the teacher must approve, so the kit stays the same for every group.
+# Replace @Dhikom21 with your GitHub username (python -m loadkit student-copy DEST --owner @you does it for you).
+
+/loadkit/engine.py                  @Dhikom21
+/loadkit/runner_api.py              @Dhikom21
+/loadkit/registry.py                @Dhikom21
+/loadkit/scenario.py                @Dhikom21
+/loadkit/generator.py               @Dhikom21
+/loadkit/analyze.py                 @Dhikom21
+/loadkit/export.py                  @Dhikom21
+/loadkit/server.py                  @Dhikom21
+/loadkit/plugins/runners/           @Dhikom21
+/worker/                            @Dhikom21
+/tests/fake_cluster.py              @Dhikom21
+/tests/helpers.py                   @Dhikom21
+/ci/                                @Dhikom21
+/.github/                           @Dhikom21
+/loadkit.yaml                       @Dhikom21

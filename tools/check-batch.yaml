@@ -1,0 +1,17 @@
+# Quick check (about 2 minutes): ONE batch job alone on the machine. Normal time = 300 × 0.18 s = 54 s on 1 core.
+#   python -m loadkit run tools/check-batch.yaml
+#   in a second terminal, once the pod exists:  kubectl logs -n loadkit-batch -l loadkit/load=check -f
+name: check-batch
+description: One batch job alone, to check that a work unit takes the planned time on this cluster.
+duration: 2m
+day_length: 2m
+seed: 42
+capacity_hint: {cpu: 8, memory: 16Gi}
+phases: {warmup: 0m, baseline: 0m, drain: 2m}
+loads:
+  - name: check
+    type: batch
+    every: 1h
+    first: 0m
+    work: {units: 300, unit: unit, cost_per_unit: 0.18s}
+    intensity: 1.0
