@@ -21,13 +21,15 @@ _MODULES = {
     "load_types": {"batch": "loadkit.plugins.load_types.batch",
                    "stream": "loadkit.plugins.load_types.stream",
                    "users": "loadkit.plugins.load_types.users"},
-    "runners": {"kubernetes": "loadkit.plugins.runners.kubernetes"},
+    "runners": {"kubernetes": "loadkit.plugins.runners.kubernetes",
+                "fake": "loadkit.plugins.runners.fake"},
     "scalers": {"target-tracking": "loadkit.plugins.scalers.target_tracking",
                 "concurrency": "loadkit.plugins.scalers.concurrency",
                 "step": "loadkit.plugins.scalers.step",        # CONNECTION 1 (step example): name -> file
                 "none": "loadkit.plugins.scalers.none"},
     "metrics": {},                       # prometheus arrives in milestone M7
-    "forecasters": {},
+    "forecasters": {"reference": "loadkit.plugins.forecasters.reference",
+                    "timestral": "loadkit.plugins.forecasters.timestral"},
 }
 
 REQUIRED = {

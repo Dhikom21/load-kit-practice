@@ -27,12 +27,6 @@ header.top { display: flex; align-items: center; gap: 14px; padding: 12px 20px; 
 .layout { display: grid; grid-template-columns: 250px minmax(0, 1fr); min-height: calc(100vh - 55px); }
 aside { background: var(--bg-alt); border-right: 1px solid var(--border-soft); padding: 16px; overflow-y: auto; }
 aside h3, .section-label { font-size: 11px; letter-spacing: 1.2px; text-transform: uppercase; color: var(--muted); margin: 14px 0 8px; font-weight: 600; }
-.sc-card { border: 1px solid var(--border-soft); background: var(--card); border-radius: 10px; padding: 9px 11px; margin-bottom: 7px;
-  cursor: pointer; transition: border-color .15s; }
-.sc-card:hover { border-color: var(--teal); }
-.sc-card.sel { border-color: var(--mint); box-shadow: inset 3px 0 0 var(--mint); }
-.sc-card .n { font-weight: 600; }
-.sc-card .d { color: var(--muted); font-size: 12px; margin-top: 3px; line-height: 1.35; }
 .load-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; }
 .chip { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
 .badge { font-size: 10px; border-radius: 6px; padding: 1px 6px; border: 1px solid var(--border); color: var(--text-2); background: var(--card); }
@@ -128,8 +122,6 @@ code { font-family: var(--mono); font-size: 12px; }
 @media (max-width: 1000px) {
   .layout { grid-template-columns: 1fr; }
   aside { border-right: 0; border-bottom: 1px solid var(--border-soft); max-height: 240px; }
-  #scenarios { display: flex; gap: 8px; overflow-x: auto; }
-  #scenarios .sc-card { min-width: 200px; }
   header.top { flex-wrap: wrap; }
   .bar-row { grid-template-columns: 60px minmax(0, 1fr); }
   .bar-row .v { grid-column: 2; }

@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D0020E — Your Build: the Intelligence Layer</title>
+</head>
+<body>
+<style>
+  :root { --ink: #1c2430; --muted: #5b6675; --line: #d8dee6; --accent: #0f6ab4; --soft: #f2f5f8; --good: #1a7f37; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: #fff; }
+  .page { max-width: 900px; margin: 0 auto; padding: 28px 32px 24px; }
+  header { border-bottom: 3px solid var(--accent); padding-bottom: 10px; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0 0 2px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); margin: 22px 0 8px; }
+  p { margin: 4px 0 10px; }
+  ul, ol { margin: 4px 0 10px; padding-left: 20px; }
+  li { margin: 3px 0; }
+  code { font: 12.5px ui-monospace, "Cascadia Code", Consolas, monospace; background: var(--soft); padding: 1px 5px; border-radius: 4px; }
+  .callout { background: var(--soft); border-left: 4px solid var(--accent); padding: 8px 14px; margin: 10px 0; border-radius: 0 6px 6px 0; }
+  .callout p { margin: 0; }
+  .wide { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  .wide table { min-width: 860px; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding: 4px 10px 4px 0; border-bottom: 1px solid var(--line); }
+  td { padding: 6px 10px 6px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  ol.steps > li { margin: 6px 0; }
+  .cmd { font: 12.5px ui-monospace, Consolas, monospace; background: var(--ink); color: #e8eef5; padding: 7px 12px; border-radius: 6px; display: inline-block; margin: 4px 0 10px; }
+  footer { margin-top: 22px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+  @media (max-width: 640px) { .page { padding: 20px 16px; } }
+  @media print {
+    body { font-size: 11pt; }
+    .page { max-width: none; padding: 0; }
+    h1 { font-size: 18pt; } h2 { font-size: 11pt; margin-top: 14pt; break-after: avoid; }
+    table { font-size: 9pt; } td, th { padding: 3px 10px 3px 0; }
+    .callout { background: none; }
+    a { color: inherit; text-decoration: none; }
+    .wide table { min-width: 0; }
+    @page { size: A4; margin: 14mm 16mm; }
+  }
+</style>
+
+<div class="page">
+
+<header>
+  <h1>Your build — the intelligence layer</h1>
+  <p class="sub">Course D0020E · the working contract for each build · the big picture is in <a href="PROJECT.html">PROJECT.html</a></p>
+</header>
+
+<p>You are handed a running kit. It drives real pods on a real machine and writes down
+<b>everything that really happened</b>. Your job is to add the four things an on-call engineer actually
+wants — and to show them in the UI:</p>
+<ul>
+  <li>a <b>scaler</b> — <i>how many pods do I need, right now?</i></li>
+  <li>a <b>forecaster</b> — <i>what will the metric look like over the next few minutes?</i></li>
+  <li>an <b>early-warning detector</b> — <i>is something about to go wrong, before the alarm trips?</i></li>
+  <li>a <b>cause-finder</b> — <i>when it did go wrong, who caused it?</i></li>
+</ul>
+<div class="callout">
+  <p><b>The one rule that keeps this clear:</b> the kit already records the ground truth in every run
+  folder. You never guess whether your work is good — you <b>measure it</b> against
+  <code>metrics.csv</code>, <code>diary.jsonl</code> and <code>impact.json</code>. Nobody's forecaster is
+  "the victim" in advance: the diary decides.</p>
+</div>
+
+<h2>The architecture — where your work plugs in</h2>
+<p>Blue is the <b>frozen core</b> (it only changes with the instructor's approval). Green is
+<b>what your group builds</b>. The whole run happens on one node; after it, everything you need for
+grading sits in the run folder.</p>
+<svg viewBox="0 0 940 482" role="img" aria-label="Architecture diagram: the frozen kit core (engine and runner) plays the scenario on one node; the student's scaler plugs into the control loop, and the student's forecaster and detectors plug in after the run, fed by the run folder" style="width:100%;height:auto;display:block;font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#5b6675"/>
+    </marker>
+  </defs>
+
+  <!-- frozen core container -->
+  <rect x="195" y="34" width="470" height="212" rx="10" fill="#f7fafd" stroke="#0f6ab4" stroke-width="1.5"/>
+  <text x="210" y="54" font-size="11" letter-spacing="1" fill="#0f6ab4" font-weight="700">FROZEN CORE — you read it, you never edit it</text>
+
+  <!-- engine + runner -->
+  <rect x="225" y="78" width="150" height="64" rx="8" fill="#eef4fa" stroke="#0f6ab4" stroke-width="1.5"/>
+  <text x="300" y="103" text-anchor="middle" font-size="13" font-weight="700" fill="#1c2430">ENGINE</text>
+  <text x="300" y="121" text-anchor="middle" font-size="10.5" fill="#5b6675">clock · diary · metrics</text>
+  <rect x="475" y="78" width="150" height="64" rx="8" fill="#eef4fa" stroke="#0f6ab4" stroke-width="1.5"/>
+  <text x="550" y="103" text-anchor="middle" font-size="13" font-weight="700" fill="#1c2430">RUNNER</text>
+  <text x="550" y="121" text-anchor="middle" font-size="10.5" fill="#5b6675">talks to the cluster</text>
+  <line x1="375" y1="98" x2="473" y2="98" stroke="#5b6675" stroke-width="1.4" marker-end="url(#ar)"/>
+  <text x="424" y="91" text-anchor="middle" font-size="10.5" fill="#5b6675">play planned events</text>
+  <line x1="475" y1="122" x2="377" y2="122" stroke="#5b6675" stroke-width="1.4" marker-end="url(#ar)"/>
+  <text x="424" y="140" text-anchor="middle" font-size="10.5" fill="#5b6675">signals every 15 s</text>
+
+  <!-- the node -->
+  <rect x="770" y="56" width="150" height="168" rx="8" fill="#f5f5f3" stroke="#8a8f98" stroke-width="1.5"/>
+  <text x="845" y="78" text-anchor="middle" font-size="12" font-weight="700" fill="#1c2430">ONE NODE</text>
+  <text x="845" y="98"  text-anchor="middle" font-size="10.5" fill="#5b6675">batch pods</text>
+  <text x="845" y="115" text-anchor="middle" font-size="10.5" fill="#5b6675">stream pods</text>
+  <text x="845" y="132" text-anchor="middle" font-size="10.5" fill="#5b6675">users pods</text>
+  <text x="845" y="149" text-anchor="middle" font-size="10.5" fill="#5b6675">Redis (per run)</text>
+  <text x="845" y="166" text-anchor="middle" font-size="10.5" fill="#5b6675">ballast pod</text>
+  <line x1="625" y1="98" x2="768" y2="98" stroke="#5b6675" stroke-width="1.4" marker-end="url(#ar)"/>
+  <text x="696" y="91" text-anchor="middle" font-size="10.5" fill="#5b6675">start · scale · kill</text>
+  <line x1="770" y1="122" x2="627" y2="122" stroke="#5b6675" stroke-width="1.4" marker-end="url(#ar)"/>
+  <text x="696" y="140" text-anchor="middle" font-size="10.5" fill="#5b6675">CPU · memory · backlog</text>
+
+  <!-- inputs -->
+  <rect x="15" y="60" width="148" height="44" rx="8" fill="#ffffff" stroke="#8a8f98" stroke-width="1.3"/>
+  <text x="89" y="79" text-anchor="middle" font-size="11.5" font-weight="700" fill="#1c2430">scenario.yaml</text>
+  <text x="89" y="94" text-anchor="middle" font-size="10" fill="#5b6675">what happens, when</text>
+  <line x1="163" y1="82" x2="223" y2="94" stroke="#5b6675" stroke-width="1.4" marker-end="url(#ar)"/>
+  <rect x="15" y="130" width="148" height="44" rx="8" fill="#ffffff" stroke="#8a8f98" stroke-width="1.3"/>
+  <text x="89" y="149" text-anchor="middle" font-size="11.5" font-weight="700" fill="#1c2430">loadkit.yaml</text>
+  <text x="89" y="164" text-anchor="middle" font-size="10" fill="#5b6675">which plugins are on</text>
+  <line x1="163" y1="152" x2="223" y2="130" stroke="#5b6675" stroke-width="1.4" marker-end="url(#ar)"/>
+
+  <!-- your scaler: live control loop -->
+  <line x1="280" y1="246" x2="280" y2="298" stroke="#5b6675" stroke-width="1.4" marker-end="url(#ar)"/>
+  <text x="290" y="276" font-size="10.5" fill="#5b6675">signals (backlog · CPU · event age)</text>
+  <rect x="225" y="300" width="200" height="66" rx="8" fill="#eef8f0" stroke="#1a7f37" stroke-width="1.6"/>
+  <text x="325" y="323" text-anchor="middle" font-size="12.5" font-weight="700" fill="#14532d">YOUR SCALER</text>
+  <text x="325" y="339" text-anchor="middle" font-size="10" fill="#5b6675">decide(now, signals, current, cfg, state)</text>
+  <text x="325" y="354" text-anchor="middle" font-size="10" fill="#5b6675">→ the pod count, every 15 s</text>
+  <path d="M 425 333 H 550 V 250" fill="none" stroke="#5b6675" stroke-width="1.4" marker-end="url(#ar)"/>
+  <text x="488" y="327" text-anchor="middle" font-size="10.5" fill="#5b6675">set pod count</text>
+
+  <!-- the run folder -->
+  <line x1="580" y1="246" x2="580" y2="298" stroke="#5b6675" stroke-width="1.4" marker-end="url(#ar)"/>
+  <text x="590" y="276" font-size="10.5" fill="#5b6675">records everything that really happened</text>
+  <rect x="475" y="300" width="215" height="76" rx="8" fill="#fbf3e4" stroke="#a06a1b" stroke-width="1.5"/>
+  <text x="582" y="320" text-anchor="middle" font-size="12" font-weight="700" fill="#7a4d10">RUN FOLDER — the ground truth</text>
+  <text x="582" y="337" text-anchor="middle" font-size="10" fill="#5b6675">metrics.csv · health.csv</text>
+  <text x="582" y="352" text-anchor="middle" font-size="10" fill="#5b6675">diary.jsonl · impact.json</text>
+  <text x="582" y="367" text-anchor="middle" font-size="10" fill="#5b6675">timeline.json · run.json</text>
+
+  <!-- your forecaster + detectors, post-run -->
+  <rect x="770" y="290" width="150" height="62" rx="8" fill="#eef8f0" stroke="#1a7f37" stroke-width="1.6"/>
+  <text x="845" y="312" text-anchor="middle" font-size="12" font-weight="700" fill="#14532d">YOUR FORECASTER</text>
+  <text x="845" y="329" text-anchor="middle" font-size="9.5" fill="#5b6675">fit_predict(ctx) → {p10, p50, p90}</text>
+  <line x1="690" y1="318" x2="768" y2="318" stroke="#5b6675" stroke-width="1.4" marker-end="url(#ar)"/>
+  <text x="729" y="311" text-anchor="middle" font-size="10" fill="#5b6675">history + planned future</text>
+  <rect x="770" y="366" width="150" height="62" rx="8" fill="#eef8f0" stroke="#1a7f37" stroke-width="1.6"/>
+  <text x="845" y="390" text-anchor="middle" font-size="12" font-weight="700" fill="#14532d">YOUR DETECTORS</text>
+  <text x="845" y="407" text-anchor="middle" font-size="9.5" fill="#5b6675">early warning · cause finder</text>
+  <line x1="690" y1="360" x2="768" y2="386" stroke="#5b6675" stroke-width="1.4" marker-end="url(#ar)"/>
+  <text x="722" y="366" text-anchor="middle" font-size="10" fill="#5b6675">diary + metrics</text>
+
+  <!-- the UI -->
+  <rect x="475" y="396" width="215" height="54" rx="8" fill="#eef4fa" stroke="#0f6ab4" stroke-width="1.5"/>
+  <text x="582" y="417" text-anchor="middle" font-size="12" font-weight="700" fill="#1c2430">UI (yours to improve)</text>
+  <text x="582" y="434" text-anchor="middle" font-size="10" fill="#5b6675">forecast band · alerts · replay</text>
+  <path d="M 845 352 V 374 H 582 V 394" fill="none" stroke="#5b6675" stroke-width="1.4" marker-end="url(#ar)"/>
+  <text x="668" y="370" text-anchor="middle" font-size="10" fill="#5b6675">p10/p50/p90 via /api/runs/&lt;id&gt;/forecast</text>
+  <line x1="770" y1="420" x2="692" y2="427" stroke="#5b6675" stroke-width="1.4" marker-end="url(#ar)"/>
+  <text x="733" y="444" text-anchor="middle" font-size="10" fill="#5b6675">alerts · the culprit</text>
+
+  <!-- legend -->
+  <rect x="195" y="456" width="13" height="13" rx="3" fill="#eef4fa" stroke="#0f6ab4"/>
+  <text x="214" y="467" font-size="10.5" fill="#5b6675">frozen core (instructor)</text>
+  <rect x="352" y="456" width="13" height="13" rx="3" fill="#eef8f0" stroke="#1a7f37"/>
+  <text x="371" y="467" font-size="10.5" fill="#5b6675">you build</text>
+  <rect x="440" y="456" width="13" height="13" rx="3" fill="#f5f5f3" stroke="#8a8f98"/>
+  <text x="459" y="467" font-size="10.5" fill="#5b6675">real cluster</text>
+  <rect x="545" y="456" width="13" height="13" rx="3" fill="#fbf3e4" stroke="#a06a1b"/>
+  <text x="564" y="467" font-size="10.5" fill="#5b6675">ground truth (run folder)</text>
+</svg>
+
+<h2>First, how a plugin works here (the only pattern you need)</h2>
+<p>You have one finished example to learn from: <b><code>loadkit/plugins/scalers/step.py</code></b> —
+every line is explained. Every plugin of every kind follows the same <b>five connections</b>:</p>
+<ol>
+  <li><b>Registry</b> — <code>loadkit/registry.py</code>: the name is mapped to a file, and <code>@register("…")</code> puts your class on the list.</li>
+  <li><b>Config</b> — <code>loadkit.yaml</code>: the name appears in an enabled list (<code>scalers:</code>, <code>forecasters:</code>, <code>ui_panels:</code>…).</li>
+  <li><b>Scenario</b> — a scenario file names it (e.g. <code>scaler: {name: step, …}</code>).</li>
+  <li><b>One call site</b> — the core calls you in exactly one place. For scalers it is <code>_control_loop()</code> in <code>loadkit/engine.py</code>.</li>
+  <li><b>A test with no cluster</b> — <code>tests/test_step_scaler.py</code> proves it works on plain data. <i>Every</i> plugin must pass a test without a cluster — that is how this whole kit is built, and how your work is checked.</li>
+</ol>
+<p>The mechanics (1–3 and 5) are copy-paste. <b>Your real work is the algorithm inside</b>, and it is
+judged by the diary, not by a secret. Read <code>step.py</code> and <code>target_tracking.py</code> and
+the pattern is yours.</p>
+
+<h2>Your answer key: the run folder</h2>
+<p>Every finished run (<code>runs/&lt;run-id&gt;/</code>) already contains what you are judged against:</p>
+<table>
+  <tr><th style="width:16%">File</th><th style="width:40%">What it is</th><th>You use it to check</th></tr>
+  <tr><td><code>metrics.csv</code></td><td>every metric, every 15 s (CPU, memory, backlog, latency…)</td><td>does your forecast / band match reality?</td></tr>
+  <tr><td><code>health.csv</code></td><td>was each load healthy, and when</td><td>does your warning fire early?</td></tr>
+  <tr><td><code>diary.jsonl</code></td><td><b>every real event + its cause</b> (kills, preemptions, bursts, health changes)</td><td>did you detect it before it happened? who caused it?</td></tr>
+  <tr><td><code>impact.json</code></td><td>the kit's own "likely causes"</td><td>does your cause-finder agree?</td></tr>
+</table>
+<p>Before you write any code, run one and open these:</p>
+<p class="cmd">python -m loadkit run sensor-storm-short --seed 7&nbsp;&nbsp;→ then read runs/&lt;run-id&gt;/README.txt</p>
+
+<h2>The four builds (same shape each time)</h2>
+<p>You choose the model and write it from scratch. Pick the <b>short</b> scenarios to develop on (they are
+written for a 4-core machine); prove it on one full scenario at the end.</p>
+<div class="wide">
+<table>
+  <tr><th style="width:13%">Build</th><th style="width:24%">Where it plugs in</th><th style="width:16%">Interface</th><th style="width:20%">Judged against</th><th>Minimum-viable (so you never stall)</th></tr>
+  <tr>
+    <td><b>Scaler (yours)</b></td>
+    <td><code>scalers:</code> + <code>_MODULES["scalers"]</code> + <code>@register("scalers")</code></td>
+    <td><code>decide(now, signals, current, cfg, state)</code></td>
+    <td>fewer degraded-minutes in <code>health.csv</code> than the <code>none</code> scaler</td>
+    <td>a new scaler that beats <code>none</code> on one short scenario, with a passing test</td>
+  </tr>
+  <tr>
+    <td><b>Forecaster</b></td>
+    <td>a built-in <code>reference</code> forecaster + a <code>timestral</code> adapter already exist in <code>loadkit/plugins/forecasters/</code> (the real Mistral call is the one stub in <code>timestral.py::_model</code>)</td>
+    <td><code>fit_predict(ctx) -&gt; {series: {p10, p50, p90}}</code></td>
+    <td>does your p10–p90 band contain the real line in <code>metrics.csv</code>? was the peak predicted?</td>
+    <td>beat the <code>reference</code> baseline; then put <b>Timestral</b> (Mistral, standard model <code>mistralai/Timestral-209M</code>) through the <code>_model</code> seam</td>
+  </tr>
+  <tr>
+    <td><b>Early-warning detector</b></td>
+    <td>new (your choice of kind)</td>
+    <td>your contract</td>
+    <td>lead time: the warning lands <b>before</b> the <code>health_degraded</code> event in <code>diary.jsonl</code>; few false alarms</td>
+    <td>fires early at least once on a short scenario, with a small false-alarm count</td>
+  </tr>
+  <tr>
+    <td><b>Cause-finder</b></td>
+    <td>a reference already lives in <code>loadkit/analyze.py</code> (<code>build_impact</code>)</td>
+    <td>your contract</td>
+    <td>names the same culprit load as <code>impact.json</code> (precision / recall)</td>
+    <td>reproduces the overlap rule; stretch: catch a case the kit misses</td>
+  </tr>
+</table>
+</div>
+<div class="callout">
+  <p><b>The data contract is already in <code>loadkit/forecast.py</code>.</b> The forecaster gets a
+  context: <code>history</code> (every load's metrics, 15 s steps), <code>horizon</code> (steps ahead), and
+  <code>planned_events</code> — the <i>known</i> future (planned bursts, job due-times, user surges) that
+  Timestral can use as <b>future covariates</b>. It returns <code>{series: {p10, p50, p90}}</code> —
+  <b>those percentiles are your forecast bands</b>, so the forecaster and the UI panel are one feature
+  seen from two ends. Timestral is probabilistic and multivariate, so it fits this contract natively;
+  your job is to call it inside <code>timestral.py::_model</code> and make it beat the built-in
+  <code>reference</code> forecaster. The model's quantile head is deterministic — same input, same
+  band — so no seeding is needed.</p>
+</div>
+<p><b>Installing Timestral (once, on the laptop):</b> <code>pip install git+https://github.com/mistralai/timestral.git</code> —
+it is <b>not on PyPI</b>; needs Python ≥ 3.10 and pulls in torch. The standard model
+<code>mistralai/Timestral-209M</code> (~837 MB) downloads from Hugging Face on first use, then runs fully
+offline. Smaller sizes (123M / 28M / 5M) exist for weak machines, but the class standard is <b>209M</b>, so
+all groups' numbers stay comparable.</p>
+
+<h2>Show it: the forecast-bands panel (post-run, in the replay view)</h2>
+<p>The panel already exists and is enabled: <code>ui/panels/forecast.js</code> (listed in
+<code>ui_panels:</code> in <code>loadkit.yaml</code>), fed by <code>/api/runs/&lt;id&gt;/forecast</code>,
+which calls the enabled forecaster. Read <code>ui/app.js</code> (how a panel works) and
+<code>forecast.js</code> (how the band is drawn from the <code>p10/p50/p90</code> the API returns).</p>
+<ul>
+  <li>It draws the real metric line, <b>shades between your p10 and p90</b>, and puts a dashed line at p50. Open a finished run, pick a load and a metric, and the band appears at the end of the run.</li>
+  <li>Make it better: more metrics, a detector-alerts layer on top, or the live view (a later step).</li>
+  <li>Minimum-viable: the band renders for one load in one finished run (it already does — the marks are for a <i>better</i> forecaster behind it).</li>
+</ul>
+
+<h2>How you'll be graded (plain words)</h2>
+<ul>
+  <li><b>Mechanical (must be present):</b> registered, switched on in <code>loadkit.yaml</code>, a passing test with no cluster, visible in the UI. This is the entry ticket, not where the marks are.</li>
+  <li><b>Algorithmic (the marks):</b> forecast quality (does the band contain reality? is the peak right?), warning lead-time (early? how many false alarms?), cause-finder accuracy (right load?). <b>Report your numbers</b> against the run folder — a claim without the number is not done.</li>
+  <li><b>Always:</b> develop on a short scenario, then prove the same thing on one full scenario.</li>
+</ul>
+
+<h2>Your first 30 minutes</h2>
+<ol class="steps">
+  <li><code>make ui</code> and open a past run (or run one).</li>
+  <li>Read <code>loadkit/plugins/scalers/step.py</code> top to bottom.</li>
+  <li><code>python -m loadkit run sensor-storm-short --seed 7</code>; open the run folder and read <code>README.txt</code>, <code>metrics.csv</code> and <code>impact.json</code>.</li>
+  <li>Open the finished run in <code>make ui</code> and look at the <b>Forecast</b> panel — the built-in <code>reference</code> band is already there. Your job is to make Timestral beat it.</li>
+</ol>
+
+<footer>
+  Big picture, outcomes and hardware: <a href="PROJECT.html">PROJECT.html</a> · source of this page: <code>students/TASK.md</code>
+</footer>
+
+</div>
+</body>
+</html>

@@ -2,6 +2,7 @@
 runs/
 # credentials: never commit kubeconfigs or tokens
 *kubeconfig*
+deploy/groups/
 dhivya.yaml
 *.kubeconfig
 env.sh

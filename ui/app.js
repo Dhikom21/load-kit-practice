@@ -248,13 +248,19 @@ async function poll() {
 }
 
 function setStatus(cur) {
+  LK.cur = cur;
   const running = cur.status === "running" || cur.status === "created";
   $("statusDot").className = "dot" + (running ? " run" : cur.status === "failed" ? " bad" : "");
   $("statusText").textContent = cur.status === "idle" ? "idle" :
-    cur.status === "created" ? "starting · setting up the cluster" : `${cur.status} · ${cur.phase} · ${LK.fmtT(cur.t)}`;
-  $("startBtn").disabled = running || !LK.clusterOk;
+    cur.status === "created" ? "starting · setting up" : `${cur.status} · ${cur.phase} · ${LK.fmtT(cur.t)}`;
+  syncStartBtn();
   $("stopSoft").disabled = !running;
   $("stopHard").disabled = !running;
+}
+
+function syncStartBtn() {
+  const running = LK.cur && (LK.cur.status === "running" || LK.cur.status === "created");
+  $("startBtn").disabled = running || !LK.clusterOk;
 }
 
 function showBanner(html, bad = false) {
@@ -319,7 +325,8 @@ function showScenario(sc, setSeed = true) {
   $("scStory").textContent = sc.story || "";
   $("scLook").innerHTML = (sc.look_for || []).map((x) => `<li>${esc(x)}</li>`).join("");
   if (setSeed) $("seed").value = sc.seed;
-  document.querySelectorAll(".sc-card").forEach((c) => c.classList.toggle("sel", c.dataset.name === sc.name));
+  const scSel = $("scenarios");
+  if (scSel && scSel.value !== sc.name) scSel.value = sc.name;
   const keep = LK.S;
   LK.S = { types: {}, loads: sc.loads.map((l) => l.name) };
   sc.loads.forEach((l) => (LK.S.types[l.name] = l.type));
@@ -333,19 +340,18 @@ function showScenario(sc, setSeed = true) {
 
 async function loadScenarios() {
   LK.scenarios = await LK.api("/api/scenarios");
-  const card = (s) => `<div class="sc-card" data-name="${esc(s.name)}">
-     <div class="n">${esc(s.name)} <span class="muted" style="font-size:11px;font-weight:400">${Math.round(s.duration / 60)} min</span></div>
-     <div class="d">${esc(s.description.replace(/^\(\d+-min teaching version\) /, ""))}</div></div>`;
+  const opt = (s) => `<option value="${esc(s.name)}">${esc(s.name)} · ${Math.round(s.duration / 60)} min</option>`;
   const teach = LK.scenarios.filter((s) => s.set === "teaching"), full = LK.scenarios.filter((s) => s.set !== "teaching");
-  $("scenarios").innerHTML =
-    (teach.length ? `<div class="section-label" style="margin-top:0">Short · for learning</div>` + teach.map(card).join("") : "") +
-    (full.length ? `<div class="section-label">Full length</div>` + full.map(card).join("") : "");
-  document.querySelectorAll(".sc-card").forEach((c) => c.addEventListener("click", () => {
+  const sel = $("scenarios");
+  sel.innerHTML =
+    (teach.length ? `<optgroup label="Short · for learning">${teach.map(opt).join("")}</optgroup>` : "") +
+    (full.length ? `<optgroup label="Full length">${full.map(opt).join("")}</optgroup>` : "");
+  sel.onchange = () => {
     if (window.__SNAP) return;
-    const sc = LK.scenarios.find((s) => s.name === c.dataset.name);
+    const sc = LK.scenarios.find((s) => s.name === sel.value);
     showScenario(sc);
     if (!(LK.S?.mode === "live" && LK.S?.status?.status === "running")) previewTimeline(sc.name);
-  }));
+  };
 }
 
 async function previewTimeline(name) {
@@ -356,8 +362,10 @@ async function previewTimeline(name) {
   Object.assign(S, { timeline: tl, node: sc.capacity, t0: 0, t1: sc.duration });
   LK.S = S;
   $("replay").style.display = "none";
-  showBanner(LK.clusterOk ? `Nothing is running yet. Press <b>Start</b> to run this scenario on the cluster ` +
-    `(it takes ${Math.round((sc.duration + 420) / 60)} min plus a short drain).` : "");
+  const k = (LK.info.runners || []).find((r) => r.name === LK.runnerName);
+  showBanner(LK.clusterOk ? `Nothing is running yet. Press <b>Start</b> to run this scenario ` +
+    (k && !k.realtime ? `on the <b>simulated node</b> — it finishes in seconds.` :
+      `on the cluster (it takes ${Math.round((sc.duration + 420) / 60)} min plus a short drain).`) : "");
   renderAll();
 }
 
@@ -402,7 +410,7 @@ LK.startRun = async (extra = {}) => {
     showBanner("");
     LK.S = null;
     live.runId = null;
-    await LK.api("/api/runs", { scenario: LK.selected, seed: Number($("seed").value), ...extra });
+    await LK.api("/api/runs", { scenario: LK.selected, seed: Number($("seed").value), runner: LK.runnerName, ...extra });
     $("pastRuns").value = "";
     if (!live.timer) live.timer = setInterval(poll, 1000);
     poll();
@@ -416,13 +424,28 @@ function loadScript(src) {
 // ------------------------------------------------------------------ boot
 async function boot() {
   LK.info = await LK.api("/api/info");
-  const k = LK.info.runners[0] || { available: false, reason: "no runner enabled in loadkit.yaml" };
-  LK.clusterOk = !!k.available;
-  const pill = $("cluster");
-  pill.className = "pill" + (k.available ? "" : " bad");
-  pill.innerHTML = `<span class="dot ${k.available ? "run" : "bad"}"></span>${esc(k.available ? k.label : "No cluster")}` +
-    (LK.info.group ? ` · group ${esc(LK.info.group)}` : "");
-  pill.title = k.reason || "";
+  const runners = LK.info.runners || [];
+  const firstOk = runners.find((r) => r.available);
+  LK.runnerName = (firstOk || runners[0] || { name: "kubernetes" }).name;
+  const sel = $("runnerSel");
+  if (runners.length > 1) {
+    sel.style.display = "";
+    sel.innerHTML = runners.map((r) =>
+      `<option value="${esc(r.name)}">${esc(r.label)}${r.available ? "" : " — not available"}</option>`).join("");
+    sel.value = LK.runnerName;
+    sel.onchange = () => { LK.runnerName = sel.value; LK.updatePill(); syncStartBtn(); };
+  }
+  LK.updatePill = () => {
+    const k = runners.find((r) => r.name === LK.runnerName) ||
+      { available: false, reason: "no runner enabled in loadkit.yaml" };
+    LK.clusterOk = !!k.available;
+    const pill = $("cluster");
+    pill.className = "pill" + (k.available ? "" : " bad");
+    pill.innerHTML = `<span class="dot ${k.available ? "run" : "bad"}"></span>${esc(k.available ? k.label : "No cluster")}` +
+      (LK.info.group ? ` · group ${esc(LK.info.group)}` : "");
+    pill.title = k.reason || "";
+  };
+  LK.updatePill();
   if (!window.__SNAP) {
     await Promise.all(LK.info.panels.map((p) => loadScript(`/panels/${p}.js`)));
   }
@@ -460,11 +483,16 @@ async function boot() {
 
   if (window.__SNAP) {                       // static snapshot (python -m loadkit snapshot): no server
     ["startBtn", "stopSoft", "stopHard", "seed"].forEach((id) => ($(id).disabled = true));
+    $("scenarios").disabled = true;
+    $("runnerSel").style.display = "none";
     return openPast(window.__SNAP.open);
   }
-  if (!LK.clusterOk) showBanner(`<b>No cluster reachable.</b> ${esc(k.reason)}. Start the kit with ` +
-    `<code>make ui KUBECONFIG=path/to/kubeconfig</code>, or create a local cluster with <code>make kind-up</code>. ` +
-    `Past runs can still be opened.`, true);
+  if (!LK.clusterOk) {
+    const k = (LK.info.runners || []).find((r) => r.name === LK.runnerName) || {};
+    showBanner(`<b>No machine available for live runs.</b> ${esc(k.reason || "")} Start the kit with ` +
+      `<code>make ui KUBECONFIG=path/to/kubeconfig</code>, or create a local cluster with <code>make kind-up</code>. ` +
+      `Past runs can still be opened.`, true);
+  }
   const cur = await LK.api("/api/runs/current");
   setStatus(cur);
   if (cur.status === "running" || cur.status === "created") {

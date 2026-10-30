@@ -17,8 +17,8 @@
 </header>
 <div class="layout">
   <aside>
-    <h3>Scenarios</h3>
-    <div id="scenarios"></div>
+    <h3>Scenario</h3>
+    <select id="scenarios" style="width:100%"></select>
     <h3>Loads in this scenario</h3>
     <div id="loads"></div>
     <h3>Past runs</h3>
@@ -34,6 +34,7 @@
       </div>
       <div class="controls">
         <label class="inl">Seed <input type="number" id="seed" value="42"></label>
+        <select id="runnerSel" title="Where the run executes" style="display:none"></select>
         <button class="primary" id="startBtn">▶ Start</button>
         <button id="stopSoft" title="Stop: no new events; running batch runs may finish (drain)">■ Stop</button>
         <button class="danger" id="stopHard" title="Stop now and delete everything the run created">✕ Stop now</button>

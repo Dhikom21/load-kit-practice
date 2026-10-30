@@ -2,12 +2,13 @@
 # Remove a name from a list to switch that plugin off; the rest keeps working.
 plugins:
   load_types: [batch, stream, users]
-  runners: [kubernetes]
+  runners: [kubernetes, fake]   # fake = simulated node: Start works with no cluster (laptop dev, tests)
   scalers: [target-tracking, concurrency, none, step]   # CONNECTION 2 (step example): switched on here
   metrics: []                           # prometheus arrives in milestone M7 (metrics-server is used until then)
+  forecasters: [reference]              # built-in baseline; add "timestral" (plugins/forecasters/timestral.py) once the model is installed
   # main view first, then the panels under "Advanced"
   ui_panels: [machine, maths, health-cards, story, blame,
-              timeline, health, live-load, replicas, shop-clue, memory, compare, diary]
+              timeline, health, live-load, replicas, shop-clue, memory, forecast, compare, diary]
 group: null                             # sharing a cluster with other groups? set e.g. g3 (and kubernetes.node below)
 allow_flags: []                         # student copy: memory scenarios are not allowed
 naming: {mode: plain}                   # plain | blind (blind arrives with milestone M7b)

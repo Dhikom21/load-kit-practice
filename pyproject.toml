@@ -17,7 +17,7 @@ include = ["loadkit*"]
 
 [tool.ruff]
 line-length = 130
-extend-exclude = ["runs"]
+extend-exclude = ["runs", ".qwen"]   # .qwen = session-local helper scripts, not kit code
 
 [tool.ruff.lint]
 select = ["E", "F", "W"]        # pycodestyle errors/warnings + pyflakes (real mistakes: unused names, undefined names ...)

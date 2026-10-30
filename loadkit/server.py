@@ -10,7 +10,7 @@ import traceback
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import FORMAT_VERSION, __version__, analyze, generator, scenario
+from . import FORMAT_VERSION, __version__, analyze, forecast, generator, scenario
 from .engine import Engine
 from .settings import ROOT, runs_dir
 
@@ -41,6 +41,7 @@ class State:
         self.thread = None
         self.error = None
         self.lock = threading.Lock()
+        self._forecast_cache = {}
 
     # -------------------------------------------------------------- helpers
     def allowed(self, name):
@@ -55,7 +56,8 @@ class State:
         out = []
         for name, cls in self.plugins["runners"].items():
             ok, why = cls.available(self.settings, self.kubeconfig)
-            out.append({"name": name, "label": getattr(cls, "label", name), "available": ok, "reason": why})
+            out.append({"name": name, "label": getattr(cls, "label", name), "available": ok, "reason": why,
+                        "realtime": bool(getattr(cls, "realtime", True))})
         return out
 
     def scenario_view(self, name, full=False):
@@ -77,15 +79,18 @@ class State:
             if without:
                 sc["loads"] = [ld for ld in sc["loads"] if ld["name"] not in without]
                 sc["_hash"] = f"{sc['_hash']}-without-{'-'.join(without)}"
-            runner = body.get("runner") or next(iter(self.plugins["runners"]), "kubernetes")
-            ok = next((r["available"] for r in self.runners() if r["name"] == runner), False)
+            info = self.runners()
+            default = next((r["name"] for r in info if r["available"]), "kubernetes")
+            runner = body.get("runner") or default
+            ok = next((r["available"] for r in info if r["name"] == runner), False)
             if not ok:
                 raise ValueError(f"runner '{runner}' is not available here")
             eng = Engine(sc, self.settings, self.plugins, seed=body.get("seed"), runner=runner,
                          note=f"without {', '.join(without)}" if without else "",
                          runner_options={"kubeconfig": self.kubeconfig})
             self.engine, self.error = eng, None
-            speed = float(body.get("speed", 1))
+            default_speed = 0.0 if not getattr(self.plugins["runners"][runner], "realtime", True) else 1.0
+            speed = float(body.get("speed", default_speed))      # 0 = as fast as possible (simulated node)
 
             def go():
                 try:
@@ -232,6 +237,25 @@ def make_handler(state):
                     self.end_headers()
                     self.wfile.write(data)
                     return None
+                if p.startswith("/api/runs/") and p.endswith("/forecast"):
+                    run_id = p.split("/")[-2]
+                    if "/" in run_id or ".." in run_id:
+                        raise FileNotFoundError(run_id)
+                    horizon = min(288, max(1, int(q.get("horizon", 48))))
+                    load, metric = q.get("load", "node"), q.get("metric", "cpu")
+                    key = (run_id, load, metric, horizon)
+                    if key not in state._forecast_cache:
+                        d = runs_dir(state.settings) / run_id
+                        if not (d / "run.json").exists():
+                            raise FileNotFoundError(run_id)
+                        fcs = state.plugins.get("forecasters") or {}
+                        if not fcs:
+                            raise ValueError("no forecaster enabled in loadkit.yaml (forecasters: [])")
+                        fname = next(iter(fcs))
+                        state._forecast_cache[key] = fcs[fname].fit_predict(forecast.build_forecast_context(d, horizon=horizon))
+                    quant = state._forecast_cache[key].get(f"{load}:{metric}", {})
+                    return self._json({"load": load, "metric": metric, "horizon": horizon, "forecaster": fname,
+                                       "step_s": 15.0, "quantiles": quant})
                 if p.startswith("/api/runs/"):
                     return self._json(state.past_run(p.split("/")[-1]))
                 if p == "/api/compare":

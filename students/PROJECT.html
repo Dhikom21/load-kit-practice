@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>D0020E — Project Brief: the Load Scenario Kit</title>
+</head>
+<body>
+<style>
+  :root { --ink: #1c2430; --muted: #5b6675; --line: #d8dee6; --accent: #0f6ab4; --soft: #f2f5f8; }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: #fff; }
+  .page { max-width: 900px; margin: 0 auto; padding: 28px 32px 20px; }
+  header { border-bottom: 3px solid var(--accent); padding-bottom: 10px; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0 0 2px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); margin: 18px 0 6px; }
+  p { margin: 4px 0 8px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 28px; }
+  .col { min-width: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+  th { text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); padding: 3px 8px 3px 0; border-bottom: 1px solid var(--line); }
+  td { padding: 4px 8px 4px 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tr:last-child td { border-bottom: none; }
+  b.hl { color: var(--accent); }
+  .lead { font-size: 13.5px; }
+  ul.tight { margin: 4px 0 8px; padding-left: 18px; }
+  ul.tight li { margin: 2px 0; }
+  code { font: 12px ui-monospace, "Cascadia Code", Consolas, monospace; background: var(--soft); padding: 1px 5px; border-radius: 4px; }
+  .hw { display: grid; grid-template-columns: 1fr 1fr; gap: 0 28px; }
+  .hw > div { min-width: 0; }
+  .hw h3 { font-size: 12px; margin: 0 0 4px; }
+  .note { font-size: 12px; color: var(--muted); margin-top: 3px; }
+  footer { margin-top: 18px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 12.5px; color: var(--muted); }
+  @media (max-width: 640px) { .grid, .hw { grid-template-columns: 1fr; } .page { padding: 20px 16px; } }
+  @media print {
+    body { font-size: 11pt; }
+    .page { max-width: none; padding: 0; }
+    h1 { font-size: 18pt; } h2 { font-size: 10.5pt; margin-top: 10pt; }
+    table { font-size: 9.5pt; } td, th { padding: 2.5px 8px 2.5px 0; }
+    header { margin-bottom: 8pt; } footer { margin-top: 10pt; }
+    a { color: inherit; text-decoration: none; }
+    @page { size: A4; margin: 14mm 16mm; }
+  }
+</style>
+
+<div class="page">
+
+<header>
+  <h1>The Load Scenario Kit — project brief</h1>
+  <p class="sub">Course D0020E · 5 groups · you build the intelligence layer on a working Kubernetes load-testing kit</p>
+</header>
+
+<h2>What the project is</h2>
+<div class="grid">
+  <div class="col">
+    <p class="lead">One machine. Three kinds of real work fighting over it: <b>batch jobs</b> (a backup that must finish by 2&nbsp;am), <b>a data stream</b> (events arriving, buffered, processed), and <b>user traffic</b> (people waiting for a response).</p>
+    <p>The kit puts all three on a single Kubernetes node and scripts a repeatable storm — a burst at minute 40, a big job at minute 60 — on a <b>real cluster</b>. It measures everything every 15&nbsp;s and writes down <b>every real event, with its cause</b>, in a diary.</p>
+  </div>
+  <div class="col">
+    <p>The kit you are handed is <b>complete and working</b>: engine, scenarios, UI, CI pipeline. What is missing is the <b class="hl">intelligence layer</b> — the four things an on-call engineer actually wants, and what your group will build:</p>
+    <ul class="tight">
+      <li><b>Scaler</b> — how many pods do I need, right now?</li>
+      <li><b>Forecaster</b> — what will the metric look like next?</li>
+      <li><b>Early-warning detector</b> — is something about to go wrong?</li>
+      <li><b>Cause-finder</b> — when it went wrong, who caused it?</li>
+    </ul>
+  </div>
+</div>
+
+<h2>What you build — and how it is measured</h2>
+<table>
+  <tr><th style="width:24%">Build</th><th>Your job</th><th style="width:34%">Measured against (the run folder's ground truth)</th></tr>
+  <tr><td><b>Scaler</b> (from scratch)</td><td>A <code>decide()</code> that reads live signals (backlog, CPU, event age) and returns the right pod count</td><td>Fewer degraded minutes in <code>health.csv</code> than doing nothing</td></tr>
+  <tr><td><b>Forecaster</b> (around <b>Timestral</b>)</td><td>Make Mistral's Timestral model (standard model <code>mistralai/Timestral-209M</code>) work through the existing <code>_model</code> seam (probabilistic, multivariate, CPU, zero-shot) and beat the built-in <code>reference</code> baseline</td><td>Your p10–p90 band contains the real line in <code>metrics.csv</code>; the peak is predicted</td></tr>
+  <tr><td><b>Early-warning detector</b> (from scratch)</td><td>Fire before the <code>health_degraded</code> event lands in the diary, with few false alarms</td><td>Lead time (seconds before the alarm) and false-alarm count</td></tr>
+  <tr><td><b>Cause-finder</b> (from scratch)</td><td>When a run goes wrong, name the load that caused it</td><td>Precision / recall against <code>impact.json</code> and the diary</td></tr>
+</table>
+<p class="note">The forecaster and the forecast-bands UI panel (shipped and enabled) are one feature seen from two ends — better model, better panel. Full contracts: <code>students/TASK.md</code>.</p>
+
+<h2>The software engineering you will be doing</h2>
+<div class="grid">
+  <div class="col">
+    <table>
+      <tr><th>You build</th><th>It trains</th></tr>
+      <tr><td>Plugins in a <b>frozen core</b></td><td>Open/closed architecture — the core only changes with the instructor's approval; your work needs zero core edits (the five-connection plugin pattern)</td></tr>
+      <tr><td><code>decide()</code> / <code>fit_predict()</code></td><td>Contract-first design — one data contract shared by your code, the tests, and the UI</td></tr>
+      <tr><td>The model behind <code>_model</code></td><td>Models as swappable components — the kit never knows which model you use</td></tr>
+      <tr><td>Tests with <b>no cluster</b></td><td>Testability by design — provable on plain data against the simulated cluster</td></tr>
+    </table>
+  </div>
+  <div class="col">
+    <table>
+      <tr><th>You do</th><th>It trains</th></tr>
+      <tr><td>Push → PR → CI → review → merge</td><td>CI/CD in practice — style + unit tests on every push; every PR gets a simulated comparison vs <code>main</code> as a comment</td></tr>
+      <tr><td>Numbers against the diary</td><td>Evaluation-driven development — a claim without the number is not done</td></tr>
+      <tr><td>One repo per group, protected <code>main</code></td><td>Team version control — branches, PRs, CODEOWNERS rules</td></tr>
+      <tr><td>The forecast-bands panel</td><td>Observability for humans + time-series ML (bands as quantiles, planned events as future covariates, deterministic quantile head = reproducible)</td></tr>
+    </table>
+  </div>
+</div>
+
+<h2>Hardware requirements</h2>
+<div class="hw">
+  <div>
+    <h3>Your laptop (day-to-day development)</h3>
+    <table>
+      <tr><td>OS / CPU / RAM / disk</td><td>any modern · 2 cores · 8 GiB · ~10 GiB free</td></tr>
+      <tr><td>Software</td><td>Python 3.12, Git</td></tr>
+      <tr><td>Network</td><td>github.com (repo + Actions)</td></tr>
+      <tr><td>Not needed</td><td>Kubernetes, Docker, GPU — all development runs in-process on the kit's simulated cluster</td></tr>
+    </table>
+    <p class="note">Once, for the forecaster: <code>pip install git+https://github.com/mistralai/timestral.git</code> (not on PyPI; pulls torch) + the ~837 MB <code>Timestral-209M</code> model on first use, then fully offline.</p>
+  </div>
+  <div>
+    <h3>Shared class cluster (final validation, instructor-managed)</h3>
+    <table>
+      <tr><td>Worker nodes</td><td>5 — one per group, all five finals run in parallel</td></tr>
+      <tr><td>Per node</td><td>4 cores / 8 GiB (short scenarios), up to 32 GiB (full 2-h scenarios)</td></tr>
+      <tr><td>Plus</td><td>control plane, metrics-server, registry pullable from the nodes</td></tr>
+      <tr><td>Your laptop needs</td><td>only network access to the API server — a scoped key per group, no kubectl</td></tr>
+    </table>
+  </div>
+</div>
+
+<footer>
+  <b>Where to start:</b> <code>students/TASK.md</code> — the *first 30 minutes* section is your onboarding: read the example plugin, run one scenario, open the run folder, and see the built-in forecast band your Timestral forecaster has to beat.
+</footer>
+
+</div>
+</body>
+</html>
