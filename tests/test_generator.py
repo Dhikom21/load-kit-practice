@@ -9,7 +9,7 @@ from tests.helpers import load, setup
 class TestGenerator(unittest.TestCase):
     def test_all_builtin_scenarios_valid(self):
         names = scenario.list_builtin()
-        self.assertGreaterEqual(len(names), 5)        # 3 experiment pairs top level (+2 memory in the research copy); the rest live in scenarios/advanced/
+        self.assertGreaterEqual(len(names), 5)        # 3 experiment pairs (+2 memory in research); the rest are in advanced/
         adv = scenario.SCENARIO_DIR / "advanced"
         for n in names + [p.stem for p in adv.glob("*.yaml")]:
             with self.subTest(n):

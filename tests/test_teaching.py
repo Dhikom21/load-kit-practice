@@ -10,7 +10,7 @@ TEACHING = [n for n in scenario.list_builtin() + [p.stem for p in _ADV.glob("*.y
 
 class TestTeaching(unittest.TestCase):
     def test_short_small_and_marked(self):
-        self.assertGreaterEqual(len(TEACHING), 9)     # 9 in the student copy (3 experiment + 6 advanced shorts), 11 in the research copy
+        self.assertGreaterEqual(len(TEACHING), 9)     # 9 shorts in the student copy (3 experiment + 6 advanced)
         for n in TEACHING:
             sc = load(n)
             self.assertEqual(sc["set"], "teaching", n)
