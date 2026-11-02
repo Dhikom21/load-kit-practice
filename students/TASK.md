@@ -40,13 +40,15 @@ Every finished run (`runs/<run-id>/`) already contains what you are judged again
 | `diary.jsonl` | **every real event + its cause** (kills, preemptions, bursts, health changes) | did you detect it before it happened? who caused it? |
 | `impact.json` | the kit's own "likely causes" | does your cause-finder agree? |
 
-Before you write any code, run one and open these:
-`python -m loadkit run sensor-storm-short --seed 7` → then read `runs/<run-id>/README.txt`.
+Before you write any code, run your first scenario and open these:
+`python -m loadkit run idle-consumers-short --runner fake` (no cluster needed; the seed does not matter
+there — the script is fixed) → then read `runs/<run-id>/README.txt`.
 
 ## The four builds (same shape each time)
 
-You choose the model and write it from scratch. Pick the **short** scenarios to develop on (they are
-written for a 4-core machine); prove it on one full scenario at the end.
+You choose the model and write it from scratch. Your scenarios are the three in
+[SCENARIOS.md](SCENARIOS.md), in that order. Develop on the **short** versions (they are written for a
+4-core machine); prove it at the end on the full-length version of one of your three.
 
 | build | where it plugs in | interface | judged against | minimum-viable (so you never stall) |
 |---|---|---|---|---|
@@ -88,13 +90,14 @@ and `forecast.js` (how the band is drawn from the `p10/p50/p90` the API returns)
 - **Algorithmic (the marks):** forecast quality (does the band contain reality? is the peak right?),
   warning lead-time (early? how many false alarms?), cause-finder accuracy (right load?).
   **Report your numbers** against the run folder — a claim without the number is not done.
-- **Always:** develop on a short scenario, then prove the same thing on one full scenario.
+- **Always:** develop on a short scenario, then prove the same thing on the full-length version of one
+  of your three scenarios.
 
 ## Your first 30 minutes
 
 1. `make ui` and open a past run (or run one).
 2. Read `loadkit/plugins/scalers/step.py` top to bottom.
-3. `python -m loadkit run sensor-storm-short --seed 7`; open the run folder and read `README.txt`,
+3. `python -m loadkit run idle-consumers-short --runner fake`; open the run folder and read `README.txt`,
    `metrics.csv` and `impact.json`.
 4. Open the finished run in `make ui` and look at the **Forecast** panel — the built-in `reference` band is
    already there. Your job is to make Timestral beat it.

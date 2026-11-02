@@ -28,10 +28,12 @@ def find(name_or_path):
     p = pathlib.Path(name_or_path)
     if p.suffix in (".yaml", ".yml") and p.exists():
         return p
-    cand = SCENARIO_DIR / f"{name_or_path}.yaml"
-    if cand.exists():
-        return cand
-    raise FileNotFoundError(f"scenario '{name_or_path}' not found (looked in {SCENARIO_DIR})")
+    # bare names also resolve in advanced/ (research scenarios: hidden from lists, still runnable by name)
+    for d in (SCENARIO_DIR, SCENARIO_DIR / "advanced"):
+        cand = d / f"{name_or_path}.yaml"
+        if cand.exists():
+            return cand
+    raise FileNotFoundError(f"scenario '{name_or_path}' not found (looked in {SCENARIO_DIR} and {SCENARIO_DIR / 'advanced'})")
 
 
 def list_builtin():

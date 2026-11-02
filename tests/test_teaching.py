@@ -4,12 +4,13 @@ import unittest
 from loadkit import scenario
 from tests.helpers import cached, events, load
 
-TEACHING = [n for n in scenario.list_builtin() if n.endswith("-short")]
+_ADV = scenario.SCENARIO_DIR / "advanced"
+TEACHING = [n for n in scenario.list_builtin() + [p.stem for p in _ADV.glob("*.yaml")] if n.endswith("-short")]
 
 
 class TestTeaching(unittest.TestCase):
     def test_short_small_and_marked(self):
-        self.assertGreaterEqual(len(TEACHING), 9)
+        self.assertGreaterEqual(len(TEACHING), 9)     # 9 in the student copy (3 experiment + 6 advanced shorts), 11 in the research copy
         for n in TEACHING:
             sc = load(n)
             self.assertEqual(sc["set"], "teaching", n)

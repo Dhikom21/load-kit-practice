@@ -3,7 +3,7 @@ LK.healthStrips = (S, w, opts = {}) => {
   const rowH = opts.rowH || 22, top = 4;
   const loads = S.loads;
   const h = top + loads.length * rowH + (opts.ticks === false ? 4 : 20);
-  const ax = LK.axis(w);
+  const ax = LK.axis(w, opts.left || 92);
   let svg = LK.phaseBands(ax, 0, h - 18, false) + (opts.ticks === false ? "" : LK.timeTicks(ax, h - 16, h - 18));
   loads.forEach((load, i) => {
     const y = top + i * rowH;
@@ -26,6 +26,6 @@ LK.register({
   teach: "Shop: p95 response time and errors. Stream: age of the oldest waiting event. Batch: run time vs its normal estimate (and overlaps, kills).",
   render(el, S) {
     if (S.mode === "preview") { el.innerHTML = `<div class="muted">Health is measured during a run.</div>`; return; }
-    el.innerHTML = LK.healthStrips(S, el.clientWidth || 900);
+    el.innerHTML = LK.healthStrips(S, el.clientWidth || 900, { left: 132 });
   },
 });

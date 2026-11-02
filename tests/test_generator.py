@@ -9,8 +9,9 @@ from tests.helpers import load, setup
 class TestGenerator(unittest.TestCase):
     def test_all_builtin_scenarios_valid(self):
         names = scenario.list_builtin()
-        self.assertGreaterEqual(len(names), 9)        # 11 in the research copy, 9 in the student copy
-        for n in names:
+        self.assertGreaterEqual(len(names), 5)        # 3 experiment pairs top level (+2 memory in the research copy); the rest live in scenarios/advanced/
+        adv = scenario.SCENARIO_DIR / "advanced"
+        for n in names + [p.stem for p in adv.glob("*.yaml")]:
             with self.subTest(n):
                 load(n)
 
