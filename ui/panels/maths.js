@@ -76,8 +76,8 @@
           if (s > best + 1e-9) { best = s; bt = x; }
         }
         t = bt;
-        when = `Busiest planned minute: ${LK.fmtT(t)}`;
-      } else when = t >= S.t1 ? "End of run — drag the replay slider to any moment" : `At ${LK.fmtT(t)}`;
+        when = `Busiest planned minute: ${LK.fmtTs(t)}`;
+      } else when = t >= S.t1 ? "End of run — drag the replay slider to any moment" : `At ${LK.fmtTs(t)}`;
       const rs = rows(S, Math.max(0, t));
       const total = rs.reduce((a, r) => a + r.helpers, 0);
       const cap = (S.mode !== "preview" && LK.at("_node", "cpu_capacity", t)) || S.node.cpu;

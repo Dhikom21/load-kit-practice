@@ -18,7 +18,7 @@ LK.register({
     S.diary.forEach((e) => {
       const m = { oom_killed: "⚡", pod_evicted: "⛔", pod_restarted: "↻" }[e.event];
       if (!m) return;
-      svg += `<text x="${ax.x(e.t)}" y="${top + ch + 12}" text-anchor="middle" font-size="11" fill="${e.event === "pod_restarted" ? "var(--muted)" : "var(--danger)"}">${m}<title>${LK.fmtT(e.t)} · ${LK.esc(LK.plainEvent(e))}</title></text>`;
+      svg += `<text x="${ax.x(e.t)}" y="${top + ch + 12}" text-anchor="middle" font-size="11" fill="${e.event === "pod_restarted" ? "var(--muted)" : "var(--danger)"}">${m}<title>${LK.fmtTs(e.t)} · ${LK.esc(LK.plainEvent(e))}</title></text>`;
     });
     svg += LK.nowLine(ax, top, ch);
     el.innerHTML = `<svg width="${w}" height="${h}">${svg}</svg>` + LK.legend(S.loads.map((l) => [LK.color(l), l]).concat([["var(--danger)", "eviction threshold (95 %)", "line"]]));

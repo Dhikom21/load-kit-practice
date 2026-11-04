@@ -46,11 +46,16 @@ class TestObjects(unittest.TestCase):
                     for c in spec["containers"]:
                         self.assertIn("memory", c["resources"]["limits"], (n, ld["name"]))
 
-    def test_high_priority_is_guaranteed(self):
+    def test_high_priority_books_what_the_scenario_says(self):
+        # priority decides who may push out whom (priority class), NOT how much CPU a pod books:
+        # payments asks for 350m and no CPU limit, exactly as in the scenario file (and on the simulated node)
         ld = next(l for l in load("priority-squeeze")["loads"] if l["name"] == "payments")
         cons = K.stream_objects("ns", "r", "loadkit", "img", ld, None)[1]
-        res = cons["spec"]["template"]["spec"]["containers"][0]["resources"]
-        self.assertEqual(res["requests"], res["limits"])
+        spec = cons["spec"]["template"]["spec"]
+        res = spec["containers"][0]["resources"]
+        self.assertEqual(res["requests"]["cpu"], K.cpu_str(ld["request"]))
+        self.assertNotIn("cpu", res["limits"])
+        self.assertEqual(spec["priorityClassName"], "loadkit-high")
 
     def test_batch_job_is_indexed_and_work_based(self):
         ld = next(l for l in load("midnight-pile-up")["loads"] if l["name"] == "report")
@@ -126,7 +131,8 @@ class TestWatcher(unittest.TestCase):
                 conditions=[{"type": "PodScheduled", "status": "False", "message": "0/1 nodes: Insufficient cpu"}])
         ev = w.update([p]) + w.update([p])
         self.assertEqual([e["event"] for e in ev], ["pod_pending"])
-        self.assertIn("Insufficient cpu", ev[0]["cause"]["reason"])
+        self.assertEqual(ev[0]["cause"]["reason"], "not enough free CPU on the node")
+        self.assertIn("Insufficient cpu", ev[0]["cause"]["message"])
 
     def test_preemption_names_the_preemptor_from_the_event(self):
         w = Watcher()
@@ -199,3 +205,104 @@ class TestConsumerGroup(unittest.TestCase):
 
     def test_unknown_pod_gets_nothing(self):
         self.assertEqual(worker_module().assignment(["a", "b"], "c", 4), [])
+
+
+class TestStoppedEarly(unittest.TestCase):
+    """A pod stopped by Kubernetes (preempted, evicted) must never make its batch run look finished."""
+
+    def test_worker_exits_with_failure_on_sigterm(self):
+        # exit code 0 would tell Kubernetes the pod's work is done; 143 (= 128 + SIGTERM) means "stopped"
+        with self.assertRaises(SystemExit) as cm:
+            worker_module().on_sigterm()
+        self.assertEqual(cm.exception.code, 143)
+
+    def test_preemptor_priority_is_named(self):
+        w = Watcher()
+        victim = {"metadata": {"name": "etl-1", "uid": "u1", "labels": {"loadkit/load": "etl", "loadkit/role": "batch"}},
+                  "spec": {"priorityClassName": "loadkit-low"}, "status": {"phase": "Running"}}
+        winner = {"metadata": {"name": "pay-1", "uid": "u9", "labels": {"loadkit/load": "payments",
+                                                                       "loadkit/role": "consumer"}},
+                  "spec": {"priorityClassName": "g3-high"}, "status": {"phase": "Running"}}
+        w.update([victim, winner])
+        ev = w.update([victim, winner], events=[{"metadata": {"uid": "e1"}, "reason": "Preempted",
+                                                 "involvedObject": {"uid": "u1"},
+                                                 "message": "Preempted by pod u9 on node kind-worker"}])
+        pre = [e for e in ev if e["event"] == "pod_preempted"]
+        self.assertEqual(pre[0]["cause"]["by"], "payments")
+        self.assertEqual(pre[0]["cause"]["by_priority"], "high")
+
+    def _complete_job(self, units_done):
+        import types
+        from unittest import mock
+        from tests.test_groups import runner
+        r = runner()
+        ld = next(x for x in r.sc["loads"] if x["type"] == "batch")
+        n = ld["parallelism"]
+        r.runs = {f"{ld['name']}#1": {"load": ld["name"], "run": 1, "units": 100, "done": 0, "state": "running",
+                                      "start": 0.0, "normal": 600.0}}
+        r.now = 240.0
+        r.redis = mock.MagicMock()
+        per = [units_done // n + (1 if i < units_done % n else 0) for i in range(n)]
+        r.redis.mget.return_value = [str(v) for v in per]
+        r.core.list_namespaced_pod.return_value = types.SimpleNamespace(items=[])
+        r.core.list_namespaced_event.return_value = types.SimpleNamespace(items=[])
+        job = types.SimpleNamespace(
+            metadata=types.SimpleNamespace(labels={"loadkit/load": ld["name"], "loadkit/run-no": "1"}),
+            status=types.SimpleNamespace(conditions=[types.SimpleNamespace(type="Complete", status="True")]))
+        r.batchapi.list_namespaced_job.return_value = types.SimpleNamespace(items=[job])
+        r.node = None
+        return [e for e in r._poll_cluster() if e["event"] in ("job_ended", "job_failed")]
+
+    def test_complete_job_with_work_undone_is_not_finished(self):
+        ev = self._complete_job(units_done=41)
+        self.assertEqual([e["event"] for e in ev], ["job_failed"])
+        self.assertEqual(ev[0]["progress"], "41/100")
+
+    def test_complete_job_with_all_work_done_ends_normally(self):
+        ev = self._complete_job(units_done=100)
+        self.assertEqual([e["event"] for e in ev], ["job_ended"])
+        self.assertEqual(ev[0]["ratio"], 0.4)
+
+
+class TestWaitingPods(unittest.TestCase):
+    """pod_pending gets a short reason (full Kubernetes message kept); pod_scheduled says how long the pod waited."""
+
+    def _pod(self, scheduled, transition=None):
+        cond = {"type": "PodScheduled", "status": "True" if scheduled else "False",
+                "message": "0/2 nodes are available: 1 Insufficient cpu, 1 node(s) had untolerated taint "
+                           "{node-role.kubernetes.io/control-plane: }. preemption: 0/2 nodes are available: "
+                           "1 Insufficient cpu, 1 Preemption is not helpful for scheduling."}
+        if transition:
+            cond["lastTransitionTime"] = transition
+        return {"metadata": {"name": "pay-2", "uid": "u2", "creationTimestamp": "2026-11-03T08:21:15Z",
+                             "labels": {"loadkit/load": "payments", "loadkit/role": "consumer"}},
+                "spec": {}, "status": {"phase": "Running" if scheduled else "Pending", "conditions": [cond]}}
+
+    def test_short_reason(self):
+        from loadkit.plugins.runners.k8s_watch import short_reason
+        msg = self._pod(False)["status"]["conditions"][0]["message"]
+        self.assertEqual(short_reason(msg), "not enough free CPU on the node; pushing out lower-priority pods "
+                                            "would not help")
+        self.assertEqual(short_reason("0/1 nodes are available: 1 Insufficient memory."),
+                         "not enough free memory on the node")
+
+    def test_pending_then_scheduled_with_waiting_time(self):
+        w = Watcher()
+        ev = w.update([self._pod(False)])
+        self.assertEqual(ev[0]["event"], "pod_pending")
+        self.assertIn("Insufficient cpu", ev[0]["cause"]["message"])        # the full message is kept
+        self.assertNotIn("taint", ev[0]["cause"]["reason"])                  # the reason is short
+        ev = w.update([self._pod(True, "2026-11-03T08:21:55Z")]) + w.update([self._pod(True, "2026-11-03T08:21:55Z")])
+        sched = [e for e in ev if e["event"] == "pod_scheduled"]
+        self.assertEqual(len(sched), 1)                                      # once, not every poll
+        self.assertEqual(sched[0]["waited_s"], 40.0)
+
+    def test_simulated_node_reports_scheduled_too(self):
+        from tests.helpers import load as load_sc, run, events
+        sc = load_sc("priority-squeeze-short")
+        sc["preemption"] = False                     # payments cannot push out the ETL pods, so its new pods wait
+        e = run(sc)
+        waited, placed = events(e, "pod_pending", "payments"), events(e, "pod_scheduled", "payments")
+        self.assertTrue(waited)
+        self.assertTrue(placed)
+        self.assertTrue(all(p["waited_s"] > 0 for p in placed))

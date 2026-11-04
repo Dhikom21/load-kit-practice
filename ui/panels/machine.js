@@ -20,6 +20,14 @@ LK.register({
         <span class="v" style="color:${full ? "var(--danger)" : "var(--text-2)"}">${LK.num(totC)} of ${LK.num(nodeCap, 0)} cores${full ? " · full" : ""}</span></div>
       <div class="bar-row"><span>Memory</span><div class="bar">${seg(mem, nodeMem)}</div>
         <span class="v">${LK.fmtMem(totM)} of ${LK.fmtMem(nodeMem)}</span></div>`;
+    // the real node is often bigger than the scenario's machine: say where the rest went (the ballast)
+    const pf = (S.diary || []).find((e) => e.event === "preflight_checked");
+    const ri = (pf && pf.runner_info) || {};
+    if (ri.node && ri.ballast_cpu > 0) {
+      html += `<div class="muted" style="font-size:12px;margin:4px 0 6px">The scenario's machine: ${LK.num(nodeCap, 1)} cores.
+        Node ${LK.esc(ri.node)} has ${LK.num(ri.node_cpu, 0)}; ${LK.num(ri.ballast_cpu, 1)} are held back by the ballast,
+        so the loads compete for the size the scenario was written for.</div>`;
+    }
     let waiting = "";
     S.loads.forEach((l) => {
       const type = S.types[l] || "batch";

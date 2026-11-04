@@ -414,6 +414,15 @@ class KubernetesRunner(Runner):
             out += self._poll_cluster()
         return out
 
+    def _units_done(self, r):
+        """Units finished by one run right now (sum of its pods' progress counters), or None if Redis is unreachable."""
+        try:
+            n = self.loads[r["load"]]["parallelism"]
+            vals = self.redis.mget([key("progress", load=r["load"], run=r["run"], index=i) for i in range(n)])
+            return sum(int(x or 0) for x in vals)
+        except Exception:  # noqa: BLE001
+            return None
+
     def _read_redis(self):
         """Progress of runs, backlog, event age, shop/users stats — one pipeline per tick."""
         try:
@@ -535,6 +544,17 @@ class KubernetesRunner(Runner):
                     continue
                 conds = {c.type: c for c in (j.status.conditions or []) if c.status == "True"}
                 if "Complete" in conds:
+                    # Kubernetes says Complete. Trust it only if the work units really are done: a pod that exits
+                    # with code 0 when it is stopped early would make the Job "Complete" with its work undone.
+                    done = self._units_done(r)
+                    if done is not None and done < r["units"]:
+                        r["state"] = "failed"
+                        r["done"] = done
+                        out.append({"event": "job_failed", "load": r["load"], "run": r["run"],
+                                    "progress": f"{done}/{r['units']}",
+                                    "cause": {"reason": "Kubernetes marked the Job Complete, but not all work units "
+                                                        "were done (its pods ended early, e.g. pushed out)"}})
+                        continue
                     r["state"] = "done"
                     r["done"] = r["units"]
                     el = self.now - r["start"]

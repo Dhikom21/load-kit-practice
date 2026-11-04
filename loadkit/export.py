@@ -28,6 +28,16 @@ LOAD_METRICS = {  # extra per-type columns in the Timeline sheet
 }
 
 
+def mins(s):
+    """Same as LK.mins in the UI: '45 s', '4 min 30 s' (under 10 min), '18 min'."""
+    if s < 90:
+        return f"{int(s + 0.5)} s"           # int(x + 0.5) rounds .5 up, like Math.round in the UI
+    if s >= 600:
+        return f"{int(s / 60 + 0.5)} min"
+    m, sec = divmod(int(s + 0.5), 60)
+    return f"{m} min {sec} s" if sec else f"{m} min"
+
+
 def describe(e):
     """The same plain-words sentence the UI shows."""
     c, ld = e.get("cause") or {}, e.get("load") or ""
@@ -51,12 +61,18 @@ def describe(e):
         "pod_evicted": lambda: f"{ld} pod evicted: the machine ran out of memory",
         "oom_killed": lambda: f"{ld} pod killed: used more memory than its limit",
         "pod_pending": lambda: f"{ld} pod waiting: {c.get('reason')}",
-        "pod_restarted": lambda: f"{ld} pod running again",
+        "pod_scheduled": lambda: f"{ld} pod started after waiting "
+                                 f"{'a while' if e.get('waited_s') is None else mins(e['waited_s'])}",
+        "pod_restarted": lambda: f"{ld} pod running again" + {
+            "starts_over": " — its share starts again from 0 (no checkpoint)",
+            "continues": " — continues from its checkpoint"}.get(e.get("work"), ""),
         "pod_lost": lambda: f"{ld} pod stopped reporting",
         "node_memory_pressure": lambda: "the machine is low on memory" if e.get("state") == "on"
         else "the machine has enough memory again",
-        "health_degraded": lambda: f"{ld} became unhealthy ({e.get('metric')} {e.get('value')} > {e.get('threshold')})",
-        "health_recovered": lambda: f"{ld} is healthy again after {round(e.get('duration_s', 0) / 60, 1)} min",
+        "health_degraded": lambda: f"{ld} became unhealthy" + (f": {', '.join(e['reasons'])}" if e.get("reasons")
+                                                               else f" ({e.get('metric')} {e.get('value')}, "
+                                                                    f"limit {e.get('threshold')})"),
+        "health_recovered": lambda: f"{ld} is healthy again (after {mins(e.get('duration_s', 0))})",
         "burst_started": lambda: f"{ld} burst: {e.get('x')}× more events",
         "burst_ended": lambda: f"{ld} burst over",
         "users_changed": lambda: f"{ld}: {e.get('users')} users",

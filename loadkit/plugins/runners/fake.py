@@ -37,7 +37,7 @@ SMALL = {"producer": (0.05, 48), "users": (0.05, 48)}   # role -> (cpu demand, m
 class Pod:
     __slots__ = ("id", "load", "role", "run", "prio", "req_cpu", "lim_cpu", "req_mem", "lim_mem", "state",
                  "ready_at", "started", "units_total", "units_left", "demand", "alloc", "mem", "restarts", "created",
-                 "want", "potential", "pend_reported")
+                 "want", "potential", "pend_reported", "pend_since")
 
     def __init__(self, pid, load, role, prio, req_cpu, lim_cpu, req_mem, lim_mem, now, run=None, units=0.0):
         self.id, self.load, self.role, self.run, self.prio = pid, load, role, run, prio
@@ -50,6 +50,7 @@ class Pod:
         self.demand = self.alloc = 0.0
         self.want = self.potential = None
         self.pend_reported = False
+        self.pend_since = None
         self.mem = 0.0
         self.restarts = 0
         self.created = now
@@ -230,6 +231,7 @@ class FakeCluster(Runner):
                     self._emit("pod_pending", p.load, pod=p.id,
                                cause={"reason": "node has the memory-pressure taint (NoSchedule)"})
                     p.pend_reported = True
+                    p.pend_since = now
             return
         for p in pending:
             if used_cpu + p.req_cpu <= self.cap_cpu + 1e-9 and used_mem + p.req_mem <= self.cap_mem:
@@ -261,6 +263,7 @@ class FakeCluster(Runner):
                 self._emit("pod_pending", p.load, pod=p.id, cause={"reason": "not enough room on the node",
                                                                       "requests_cpu": round(p.req_cpu, 3)})
                 p.pend_reported = True
+                p.pend_since = now
 
     @staticmethod
     def _prio_name(v):
@@ -268,6 +271,9 @@ class FakeCluster(Runner):
 
     def _place(self, p, now):
         p.state = "running"
+        if p.pend_reported:          # it had to wait: say for how long
+            self._emit("pod_scheduled", p.load, pod=p.id, waited_s=round(now - p.pend_since, 1),
+                       cause={"reason": "room on the node became free"})
         p.pend_reported = False
         p.started = now
         if p.restarts:

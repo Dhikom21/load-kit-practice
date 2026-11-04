@@ -173,6 +173,21 @@ class TestHealth(unittest.TestCase):
         e = cached("everything")
         self.assertFalse([x for x in events(e, "health_degraded") if x["phase"] in ("warmup", "baseline")])
 
+    def test_degraded_says_which_facts(self):
+        """'became unhealthy' lists what made the 2 bad checks bad (kills, waiting pods, running late, ...)."""
+        e = cached("priority-squeeze")
+        d = events(e, "health_degraded", "nightly-etl")
+        self.assertTrue(d)
+        self.assertTrue(all(x["reasons"] for x in d))
+        self.assertTrue(any("killed" in " ".join(x["reasons"]) for x in d))
+
+    def test_batch_restart_says_work_is_lost(self):
+        """Without a checkpoint a replacement batch pod redoes its whole share: the diary says so."""
+        e = cached("priority-squeeze")
+        r = events(e, "pod_restarted", "nightly-etl")
+        self.assertTrue(r)
+        self.assertTrue(all(x["work"] == "starts_over" and "starts again from 0" in x["cause"]["work"] for x in r))
+
 
 class TestScalers(unittest.TestCase):
     def test_target_tracking_takes_max_and_records_why(self):

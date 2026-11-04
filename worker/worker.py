@@ -564,9 +564,19 @@ def build_parser():
     return ap
 
 
+def on_sigterm(*_):
+    """Kubernetes is stopping this pod (preempted, evicted, deleted). Exit with 143 (= 128 + SIGTERM), NOT 0.
+
+    Exit code 0 tells Kubernetes "this pod finished its work". For a batch pod that was pushed out halfway, the
+    Indexed Job would then count its index as completed and mark the whole Job Complete with the work undone
+    (seen as `job_ended` at 0.41x normal right after a preemption). A non-zero code makes it count as failed, so
+    the Job starts a new pod for that index, which continues (checkpoint) or starts again (no checkpoint)."""
+    sys.exit(143)
+
+
 def main(argv=None):
     args = build_parser().parse_args(argv)
-    signal.signal(signal.SIGTERM, lambda *a: sys.exit(0))
+    signal.signal(signal.SIGTERM, on_sigterm)
     {"batch": role_batch, "produce": role_produce, "consume": role_consume, "shop": role_shop,
      "users": role_users, "calibrate": role_calibrate}[args.role](args)
 

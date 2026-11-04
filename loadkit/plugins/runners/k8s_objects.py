@@ -1,7 +1,8 @@
 """Kubernetes objects the kit creates, as plain dicts (pure functions, unit-tested without a cluster).
 
 Labels on everything: app.kubernetes.io/part-of=loadkit, loadkit/run=<run id>, loadkit/load=<load>, loadkit/role=<role>.
-Priority mapping (plan 5.6): high -> Guaranteed (request = limit), normal/low -> Burstable; every pod has a memory limit.
+Priority -> priority class only (who may push out whom). Requests/limits are exactly the scenario's, for every
+priority, as on the simulated node; a pod is Guaranteed only if the scenario sets request = limit. Every pod has a memory limit.
 """
 PART_OF = {"app.kubernetes.io/part-of": "loadkit"}
 PRIORITY_VALUE = {"high": 100000, "normal": 1000, "low": 10}
@@ -77,12 +78,13 @@ def redis_objects(ns, run, prefix, node_selector):
     return dep, svc, netpol
 
 
-def resources(ld, demand_cores, mem_request, mem_limit, high):
-    """Requests/limits from the scenario. High priority -> Guaranteed (cpu and memory request = limit)."""
-    if high:
-        cpu = max(ld["request"], demand_cores)
-        return {"requests": {"cpu": cpu_str(cpu), "memory": mem_str(mem_limit)},
-                "limits": {"cpu": cpu_str(cpu), "memory": mem_str(mem_limit)}}
+def resources(ld, mem_request, mem_limit):
+    """CPU and memory requests/limits exactly as the scenario file says, for every priority.
+
+    The simulated node (runners/fake.py) books the same numbers, so a scenario fills the node the same way on both.
+    (Earlier, high-priority pods were made "Guaranteed" with cpu = max(request, threads); a payments consumer then
+    booked 1 core instead of 0.35 and only half of them fit on the node, unlike on the simulated node.)
+    Priority still decides who may push out whom: that comes from the pod's priority class, not from these numbers."""
     res = {"requests": {"cpu": cpu_str(ld["request"]), "memory": mem_str(mem_request)},
            "limits": {"memory": mem_str(mem_limit)}}
     if ld.get("limit"):
@@ -127,7 +129,7 @@ def batch_job(ns, run, prefix, image, ld, run_no, units, deadline_s, node_select
     """One batch run = one Indexed Job with `parallelism` pods; each pod does its share of the units."""
     p = ld["parallelism"]
     req, lim = mem_limits(ld)
-    res = resources(ld, ld["intensity"], req, lim, ld["priority"] == "high")
+    res = resources(ld, req, lim)
     args = ["--load", ld["name"], "--run", str(run_no), "--units", str(int(units)), "--parallel", str(p),
             "--cost", str(ld["cost_per_unit"]), "--intensity", str(ld["intensity"]), *memory_args(ld, "batch")]
     if ld.get("checkpoint"):
@@ -158,7 +160,7 @@ SMALL = {"requests": {"cpu": "50m", "memory": "64Mi"}, "limits": {"cpu": "500m",
 def stream_objects(ns, run, prefix, image, ld, node_selector):
     prod = worker_container(image, "produce", ["--load", ld["name"], "--partitions", str(ld["partitions"])], SMALL)
     req, lim = mem_limits(ld)
-    res = resources(ld, ld["threads_per_consumer"], req, lim, ld["priority"] == "high")
+    res = resources(ld, req, lim)
     cons = worker_container(image, "consume", [
         "--load", ld["name"], "--partitions", str(ld["partitions"]), "--threads", str(ld["threads_per_consumer"]),
         "--work-ms", str(round(ld["work_per_event"] * 1000, 3)), "--prefetch", str(ld["prefetch"]),
@@ -171,7 +173,7 @@ def stream_objects(ns, run, prefix, image, ld, node_selector):
 
 def users_objects(ns, run, prefix, image, ld, node_selector):
     req, lim = mem_limits(ld)
-    res = resources(ld, 1.0, req, lim, ld["priority"] == "high")
+    res = resources(ld, req, lim)
     shop = worker_container(image, "shop", [
         "--load", ld["name"], "--cost-ms", str(round(ld["cost_per_request"] * 1000, 3)), "--port", "8080",
         "--per-in-flight", str(int(ld["memory"].get("per_in_flight", 0))), *memory_args(ld, "users")], res,

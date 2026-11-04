@@ -27,8 +27,10 @@ LK.register({
       if (quiet && routine.has(e.event)) continue;
       const plain = LK.plainEvent(e);
       if (q && !(plain + JSON.stringify(e)).toLowerCase().includes(q)) continue;
-      const cause = e.cause ? ` <span class="cause">cause: ${LK.esc(JSON.stringify(e.cause)).slice(0, 220)}</span>` : "";
-      rows.push(`<div class="row"><span class="t">${LK.fmtT(e.t).padStart(8, " ")}</span> <span class="${bad.has(e.event) ? "bad" : e.origin}">${e.origin.padEnd(8, " ")}</span> ${LK.esc(plain)}${cause}</div>`);
+      const full = e.cause ? JSON.stringify(e.cause) : "";
+      const short = full.length > 220 ? full.slice(0, 220) + " …" : full;     // cut first, then escape (no broken &quot;)
+      const cause = e.cause ? ` <span class="cause" title="${LK.esc(full)}">cause: ${LK.esc(short)}</span>` : "";
+      rows.push(`<div class="row"><span class="t">${LK.fmtTs(e.t).padStart(8, " ")}</span> <span class="${bad.has(e.event) ? "bad" : e.origin}">${e.origin.padEnd(8, " ")}</span> ${LK.esc(plain)}${cause}</div>`);
     }
     el.querySelector(".diary-box").innerHTML = rows.join("") || `<span class="muted">${S.mode === "preview" ? "The diary fills during a run." : "No events match."}</span>`;
   },

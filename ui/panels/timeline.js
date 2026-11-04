@@ -24,7 +24,7 @@ LK.register({
       if (type === "batch") {
         tl.filter((e) => e.load === load && e.kind === "job_due").forEach((e) => {
           const x1 = ax.x(e.t), x2 = ax.x(e.t + e.value.normal_duration);
-          svg += `<rect x="${x1}" y="${y + 4}" width="${Math.max(2, x2 - x1)}" height="${rowH - 10}" rx="3" fill="none" stroke="${c}" stroke-opacity=".8" stroke-dasharray="3 2"><title>${esc(load)} run ${e.value.run} due ${LK.fmtT(e.t)} · ${e.value.units} units · normal ≈ ${Math.round(e.value.normal_duration / 60)} min</title></rect>`;
+          svg += `<rect x="${x1}" y="${y + 4}" width="${Math.max(2, x2 - x1)}" height="${rowH - 10}" rx="3" fill="none" stroke="${c}" stroke-opacity=".8" stroke-dasharray="3 2"><title>${esc(load)} run ${e.value.run} due ${LK.fmtTs(e.t)} · ${e.value.units} units · normal ≈ ${Math.round(e.value.normal_duration / 60)} min</title></rect>`;
         });
         Object.entries(runStart).filter(([k]) => k.startsWith(load + "#")).forEach(([k, s]) => {
           const end = runEnd[k], lr = liveRuns[k];
@@ -42,7 +42,7 @@ LK.register({
         bs.forEach((b) => {
           const e = tl.find((x) => x.load === load && x.kind === "burst_end" && x.t >= b.t);
           const x1 = ax.x(b.t), x2 = ax.x(e ? e.t : b.t + 60);
-          svg += `<rect x="${x1}" y="${y + 4}" width="${Math.max(2, x2 - x1)}" height="${rowH - 10}" rx="3" fill="${c}" fill-opacity=".12" stroke="${c}" stroke-dasharray="3 2"><title>planned burst ×${b.value.x} at ${LK.fmtT(b.t)}</title></rect>`;
+          svg += `<rect x="${x1}" y="${y + 4}" width="${Math.max(2, x2 - x1)}" height="${rowH - 10}" rx="3" fill="${c}" fill-opacity=".12" stroke="${c}" stroke-dasharray="3 2"><title>planned burst ×${b.value.x} at ${LK.fmtTs(b.t)}</title></rect>`;
         });
         const pts = LK.series(load, "arrival_rate");
         if (pts.length) {
@@ -73,7 +73,7 @@ LK.register({
                     oom_killed: "⚡", pod_evicted: "⛔", consumers_idle: "◌" }[e.event];
         if (!m) return;
         const col = ["pod_preempted", "oom_killed", "pod_evicted", "job_timed_out"].includes(e.event) ? "var(--danger)" : "var(--mint)";
-        svg += `<text x="${ax.x(e.t)}" y="${y + 9}" text-anchor="middle" font-size="10" fill="${col}" style="cursor:help">${m}<title>${LK.fmtT(e.t)} · ${esc(LK.plainEvent(e))}</title></text>`;
+        svg += `<text x="${ax.x(e.t)}" y="${y + 9}" text-anchor="middle" font-size="10" fill="${col}" style="cursor:help">${m}<title>${LK.fmtTs(e.t)} · ${esc(LK.plainEvent(e))}</title></text>`;
       });
     });
     svg += LK.nowLine(ax, 0, h - 20);

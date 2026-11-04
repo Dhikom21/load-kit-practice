@@ -1,9 +1,10 @@
 """Turn what the Kubernetes API shows into the kit's reactive events (pure logic, unit-tested with pod fixtures).
 
 Input: pods as plain dicts (camelCase, like `kubectl get pod -o json`), events (same), node conditions.
-Output: events {event, load, cause, ...}: pod_pending, oom_killed, pod_evicted, pod_preempted, pod_restarted,
+Output: events {event, load, cause, ...}: pod_pending, pod_scheduled, oom_killed, pod_evicted, pod_preempted, pod_restarted,
 pod_lost, node_memory_pressure.
 """
+import datetime
 import re
 
 PREEMPT_RE = re.compile(r"[Pp]reempted by (?:pod )?(?:(?P<ns>[\w.-]+)/)?(?P<who>[\w.-]+)")
@@ -15,6 +16,12 @@ def pod_load(p):
 
 def pod_role(p):
     return (p.get("metadata", {}).get("labels") or {}).get("loadkit/role")
+
+
+def pod_priority(p):
+    """high | normal | low | system, from the pod's priority class (e.g. loadkit-high, g3-low), or None."""
+    pc = (p.get("spec") or {}).get("priorityClassName") or ""
+    return pc.rsplit("-", 1)[-1] if "-" in pc else (pc or None)
 
 
 def pod_run_no(p):
@@ -40,6 +47,51 @@ def unscheduled_reason(p):
     return None
 
 
+def short_reason(msg):
+    """Kubernetes' scheduler message in a few plain words; the full message is kept next to it."""
+    m = msg or ""
+    need = [w for w, k in (("CPU", "Insufficient cpu"), ("memory", "Insufficient memory")) if k in m]
+    if need:
+        out = f"not enough free {' and '.join(need)} on the node"
+    elif "taint" in m:
+        out = "no node accepts the pod (taints)"
+    elif "affinity" in m or "selector" in m:
+        out = "no node matches the pod's node selector"
+    else:
+        out = m or "not scheduled"
+    if "Preemption is not helpful" in m:
+        out += "; pushing out lower-priority pods would not help"
+    return out
+
+
+def _ts(v):
+    """Kubernetes timestamp (ISO string or datetime) -> datetime, or None."""
+    if not v:
+        return None
+    if isinstance(v, datetime.datetime):
+        return v
+    try:
+        return datetime.datetime.fromisoformat(str(v).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def waited_s(p):
+    """Seconds between the pod's creation and the moment the scheduler placed it, or None if unknown."""
+    created = _ts((p.get("metadata") or {}).get("creationTimestamp"))
+    for c in (p.get("status") or {}).get("conditions") or []:
+        if c.get("type") == "PodScheduled" and c.get("status") == "True":
+            placed = _ts(c.get("lastTransitionTime"))
+            if created and placed:
+                return round(max(0.0, (placed - created).total_seconds()), 1)
+    return None
+
+
+def is_scheduled(p):
+    return any(c.get("type") == "PodScheduled" and c.get("status") == "True"
+               for c in (p.get("status") or {}).get("conditions") or [])
+
+
 def terminated_reason(p):
     for cs in (p.get("status") or {}).get("containerStatuses") or []:
         for st in ((cs.get("state") or {}).get("terminated"), (cs.get("lastState") or {}).get("terminated")):
@@ -60,6 +112,7 @@ class Watcher:
         self.seen = {}                # uid -> dict(load, role, name, pending_reported, oom_restarts, killed, running)
         self.name_to_load = {}        # pod name -> load (to resolve "preempted by <pod>")
         self.uid_to_load = {}
+        self.prio = {}                # pod name or uid -> priority (high | normal | low), to name the preemptor's
         self.kill_debt = {}           # load -> pods killed and not yet replaced
         self.done_events = set()      # event uids already handled
         self.mem_pressure = None
@@ -78,6 +131,7 @@ class Watcher:
             if pod_load(p):
                 self.name_to_load[md.get("name")] = pod_load(p)
                 self.uid_to_load[md.get("uid")] = pod_load(p)
+                self.prio[md.get("name")] = self.prio[md.get("uid")] = pod_priority(p)
         # events first: the "Preempted" event names the preemptor, the pod condition does not
         for e in events:
             md = e.get("metadata") or {}
@@ -102,7 +156,13 @@ class Watcher:
             why = unscheduled_reason(p)
             if why and not rec.get("pending_reported"):
                 rec["pending_reported"] = True
-                out.append({"event": "pod_pending", "load": load, "pod": rec["name"], "cause": {"reason": why}})
+                out.append({"event": "pod_pending", "load": load, "pod": rec["name"],
+                            "cause": {"reason": short_reason(why), "message": why[:300]}})
+            # placed after waiting: say how long it waited
+            elif rec.get("pending_reported") and not rec.get("scheduled_reported") and is_scheduled(p):
+                rec["scheduled_reported"] = True
+                out.append({"event": "pod_scheduled", "load": load, "pod": rec["name"], "waited_s": waited_s(p),
+                            "cause": {"reason": "room on the node became free"}})
             # OOM kill (restartPolicy Always: restartCount grows; Never: pod Failed with OOMKilled)
             reason, restarts = terminated_reason(p)
             if reason == "OOMKilled" and restarts > rec["oom_restarts"]:
@@ -142,4 +202,7 @@ class Watcher:
         m = PREEMPT_RE.search(msg or "")
         who = m.group("who") if m else None
         by = self.name_to_load.get(who) or self.uid_to_load.get(who) or (who or "unknown")
-        return {"by": by, "message": (msg or "")[:200]}
+        out = {"by": by, "message": (msg or "")[:200]}
+        if self.prio.get(who):
+            out["by_priority"] = self.prio[who]
+        return out

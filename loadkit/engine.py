@@ -35,6 +35,45 @@ def _fmt_progress(info):
     return f"{int(info['done'])}/{int(info['units'])}"
 
 
+FLAG_WORDS = {"pods waiting": "pods waiting for room", "overlapped": "runs overlapped",
+              "timed_out": "a run took too long and was stopped"}
+
+
+def _add_to_streak(st, val, thr, kills, extra):
+    """One more bad health check before 'became unhealthy' is written: remember what made it bad."""
+    s = st.get("streak") or {"peak": None, "kills": 0, "flags": [], "errors": None}
+    st["streak"] = s
+    if val > thr:
+        s["peak"] = max(val, s["peak"] or val)
+    s["kills"] += kills
+    for f in extra.get("flags", []):
+        if f not in s["flags"]:
+            s["flags"].append(f)
+    err, emax = extra.get("errors"), extra.get("errors_max")
+    if err is not None and emax is not None and err > emax:
+        s["errors"] = (max(err, s["errors"][0] if s["errors"] else err), emax)
+    s["thr"] = thr
+
+
+def _streak_reasons(metric, s):
+    """The facts behind 'became unhealthy', in plain words (what was measured, not a verdict)."""
+    if not s:
+        return []
+    out = []
+    peak, thr = s["peak"], s.get("thr")
+    if peak is not None:
+        out.append({"runtime_ratio": f"running {peak:.2f}× its normal time (limit {thr:g}×)",
+                    "event_age": f"oldest event waited {peak:.0f} s (limit {thr:g} s)",
+                    "latency_p95": f"p95 response time {peak:.2f} s (limit {thr:g} s)"}.get(
+                        metric, f"{metric} {peak:.3g} (limit {thr:g})"))
+    if s["errors"]:
+        out.append(f"{s['errors'][0]:.1%} of requests failed (limit {s['errors'][1]:.1%})")
+    if s["kills"]:
+        out.append(f"{s['kills']} pod{'s' if s['kills'] > 1 else ''} killed")
+    out += [FLAG_WORDS.get(f, f) for f in s["flags"]]
+    return out
+
+
 class Engine:
     def __init__(self, sc, settings, plugins, seed=None, runner="kubernetes", record=True, out_dir=None, note="",
                  runner_options=None):
@@ -139,6 +178,8 @@ class Engine:
                    scenario_hash=self.sc.get("_hash"))
         self._set_phase("preflight")
         self._preflight()
+        if self.dir:
+            self._write_calibration()
         self._set_phase("setup")
         self.runner.setup()
         for name, ld in self.loads.items():
@@ -381,6 +422,14 @@ class Engine:
             self.kills_since_eval[load] += 1
             if ev.get("run"):
                 ev["run"] = int(str(ev["run"]).split("#")[-1])
+        if event == "pod_restarted" and load in self.loads and self.loads[load]["type"] == "batch":
+            # a batch pod that starts again either continues (checkpoint) or redoes its whole share (lost work)
+            keeps = bool(self.loads[load].get("checkpoint"))
+            ev["work"] = "continues" if keeps else "starts_over"
+            cause = dict(ev.get("cause") or {"reason": DEFAULT_CAUSE["pod_restarted"]})
+            cause["work"] = ("its share of the run continues from the checkpoint" if keeps else
+                             "its share of the run starts again from 0 (no checkpoint: the finished part is lost)")
+            ev["cause"] = cause
         self.write(event, "reactive", load, **ev)
 
     # ------------------------------------------------------------------ control loop
@@ -424,7 +473,7 @@ class Engine:
             thr = h.get("threshold_s", 0.3)
             emax = h.get("errors_max_frac", 0.01)
             ok = p95 <= thr and err <= emax
-            return "latency_p95", p95, thr, ok, {"errors": round(err, 4)}
+            return "latency_p95", p95, thr, ok, {"errors": round(err, 4), "errors_max": emax}
         if ld["type"] == "stream":
             age = self.runner.event_age(name)
             thr = h.get("threshold_s", 30.0)
@@ -458,17 +507,21 @@ class Engine:
             st["last"] = {"metric": metric, "value": val, "threshold": thr, "healthy": ok, **extra}
             if not counted:
                 st["bad"] = st["good"] = 0
+                st["streak"] = None
                 continue
             sev = max(0.0, val / thr - 1.0) if thr else 0.0
             if not ok:
                 st["bad"] += 1
                 st["good"] = 0
+                if st["open"] is None:                    # collect what made each bad check bad
+                    _add_to_streak(st, val, thr, kills, extra)
                 if st["open"] is None and st["bad"] >= 2:
                     st["open"] = {"load": name, "metric": metric, "start_t": round(self.t - self.decision, 1),
                                   "peak": val, "threshold": thr, "severity": 0.0, "reasons": set()}
                     self.periods.append(st["open"])
                     self.write("health_degraded", "reactive", name, metric=metric, value=round(val, 3),
                                threshold=thr, **{k: v for k, v in extra.items()},
+                               reasons=_streak_reasons(metric, st.pop("streak", None)),
                                active_events=self._context(),
                                cause={"reason": "2 unhealthy checks in a row (facts only; causes are computed "
                                                 "after the run)"})
@@ -482,6 +535,7 @@ class Engine:
             else:
                 st["good"] += 1
                 st["bad"] = 0
+                st["streak"] = None
                 if st["open"] is not None and st["good"] >= 2:
                     o = st["open"]
                     o["end_t"] = round(self.t - self.decision, 1)
@@ -577,6 +631,10 @@ class Engine:
         else:
             (self.dir / "scenario.yaml").write_text(yaml.safe_dump(self.sc), encoding="utf-8")
         (self.dir / "timeline.json").write_text(json.dumps(self.timeline, indent=1, sort_keys=True), encoding="utf-8")
+        self._write_run_json()
+
+    def _write_calibration(self):
+        """After the start-up check: only then does the runner know its node and ballast."""
         cal = getattr(self.runner, "calibration", None)
         cal = cal() if callable(cal) else None
         (self.dir / "calibration.json").write_text(json.dumps(cal or {
@@ -584,7 +642,6 @@ class Engine:
             "note": "not calibrated: cost_per_unit is taken from the scenario file as is (run `make calibrate`)",
             "cost_per_unit_s": {n: ld["cost_per_unit"] for n, ld in self.loads.items() if ld["type"] == "batch"}},
             indent=1), encoding="utf-8")
-        self._write_run_json()
 
     def _write_run_json(self):
         info = {

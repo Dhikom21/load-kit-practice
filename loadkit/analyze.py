@@ -237,8 +237,8 @@ def readme(engine, impact):
         lines.append(f"  - {ld['name']} ({ld['type']}, team {ld['team']}, priority {ld['priority']})")
     lines += ["", "What happened (counts):"]
     for k in ("job_started", "job_ended", "run_overlapped", "run_skipped", "run_queued", "job_timed_out",
-              "consumers_scaled", "consumers_idle", "shop_scaled", "pod_pending", "pod_preempted", "oom_killed",
-              "pod_evicted", "pod_restarted", "health_degraded"):
+              "consumers_scaled", "consumers_idle", "shop_scaled", "pod_pending", "pod_scheduled", "pod_preempted",
+              "oom_killed", "pod_evicted", "pod_restarted", "health_degraded"):
         if c.get(k):
             lines.append(f"  {k:18} {c[k]}")
     lines += ["", "Degraded periods and likely causes (computed after the run):"]

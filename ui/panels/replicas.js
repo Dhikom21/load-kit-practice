@@ -20,7 +20,7 @@ LK.register({
       svg += `<path d="${d}" fill="none" stroke="${LK.color(l)}" stroke-width="2"/>`;
       S.diary.filter((e) => e.load === l && (e.event === "consumers_scaled" || e.event === "shop_scaled")).forEach((e) => {
         const ps = Object.entries(e.cause.per_signal || {}).map(([k, v]) => `${k} wanted ${v}`).join(", ");
-        svg += `<circle cx="${ax.x(e.t)}" cy="${y(e.to)}" r="3.5" fill="${LK.color(l)}" stroke="var(--bg)"><title>${LK.fmtT(e.t)} · ${LK.esc(l)} ${e.from} → ${e.to} · ${LK.esc(ps)} → ${LK.esc(e.cause.winner)}${e.cause.reason ? "\n" + LK.esc(e.cause.reason) : ""}</title></circle>`;
+        svg += `<circle cx="${ax.x(e.t)}" cy="${y(e.to)}" r="3.5" fill="${LK.color(l)}" stroke="var(--bg)"><title>${LK.fmtTs(e.t)} · ${LK.esc(l)} ${e.from} → ${e.to} · ${LK.esc(ps)} → ${LK.esc(e.cause.winner)}${e.cause.reason ? "\n" + LK.esc(e.cause.reason) : ""}</title></circle>`;
       });
     });
     svg += LK.nowLine(ax, top, ch);

@@ -6,7 +6,7 @@
 const LK = {
   panels: {},
   main: ["machine", "maths", "health-cards", "story", "blame"],
-  advanced: ["timeline", "health", "live-load", "replicas", "shop-clue", "memory", "compare", "diary"],
+  advanced: ["timeline", "health", "live-load", "replicas", "shop-clue", "memory", "forecast", "compare", "diary"],
   wide: new Set(["machine", "maths", "health-cards", "timeline", "health", "compare", "diary"]),
   S: null,            // what is shown now (live run, past run or planned preview) — same shape for all
   info: null,
@@ -47,9 +47,21 @@ LK.fmtT = (t) => {
   const h = Math.floor(a / 3600), m = Math.floor((a % 3600) / 60), sec = a % 60;
   return `${sign}${h}:${String(m).padStart(2, "0")}${h === 0 && a < 600 ? ":" + String(sec).padStart(2, "0") : ""}`;
 };
+// event times: always h:mm:ss (axis labels above drop the seconds after minute 10 to stay short)
+LK.fmtTs = (t) => {
+  const s = Math.round(t), sign = s < 0 ? "−" : "", a = Math.abs(s);
+  const h = Math.floor(a / 3600), m = Math.floor((a % 3600) / 60), sec = a % 60;
+  return `${sign}${h}:${String(m).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
+};
 LK.fmtMem = (b) => b >= 1024 ** 3 ? (b / 1024 ** 3).toFixed(1) + " GiB" : Math.round(b / 1024 ** 2) + " MiB";
 LK.num = (v, d = 1) => (Math.abs(v) >= 100 ? Math.round(v) : Number(v).toFixed(d));
-LK.mins = (s) => (s < 90 ? `${Math.round(s)} s` : `${Math.round(s / 60)} min`);
+// durations: "45 s", "4 min 30 s" (under 10 min the seconds matter), "18 min" (whole minutes after that)
+LK.mins = (s) => {
+  if (s < 90) return `${Math.round(s)} s`;
+  if (s >= 600) return `${Math.round(s / 60)} min`;
+  const r = Math.round(s), m = Math.floor(r / 60), sec = r % 60;
+  return sec ? `${m} min ${sec} s` : `${m} min`;
+};
 
 LK.color = (load) => {
   const S = LK.S;
@@ -170,14 +182,17 @@ LK.plainEvent = (e) => {
     case "consumers_scaled": return `${e.load} scaled ${e.from} → ${e.to} consumer pods`;
     case "shop_scaled": return `${e.load} scaled ${e.from} → ${e.to} shop pods`;
     case "consumers_idle": return `${e.load}: ${e.idle} consumer pod(s) idle — only ${c.partitions} partitions`;
-    case "pod_preempted": return `${e.load} pod pushed out by ${c.by} (priority ${c.by_priority})`;
+    case "pod_preempted": return `${e.load} pod pushed out by ${c.by}${c.by_priority ? ` (priority ${c.by_priority})` : ""}`;
     case "pod_evicted": return `${e.load} pod evicted: the machine ran out of memory`;
     case "oom_killed": return `${e.load} pod killed: used more memory than its limit`;
     case "pod_pending": return `${e.load} pod waiting: ${c.reason}`;
-    case "pod_restarted": return `${e.load} pod running again`;
+    case "pod_scheduled": return `${e.load} pod started after waiting ${e.waited_s == null ? "a while" : LK.mins(e.waited_s)}`;
+    case "pod_restarted": return `${e.load} pod running again` +
+      (e.work === "starts_over" ? " — its share starts again from 0 (no checkpoint)" :
+        e.work === "continues" ? " — continues from its checkpoint" : "");
     case "pod_lost": return `${e.load} pod stopped reporting`;
     case "node_memory_pressure": return e.state === "on" ? "the machine is low on memory" : "the machine has enough memory again";
-    case "health_degraded": return `${e.load} became unhealthy`;
+    case "health_degraded": return `${e.load} became unhealthy` + (e.reasons && e.reasons.length ? `: ${e.reasons.join(", ")}` : "");
     case "health_recovered": return `${e.load} is healthy again (after ${LK.mins(e.duration_s)})`;
     case "job_timed_out": return `${e.load} run ${e.run} stopped: took too long (${e.progress} done)`;
     case "job_due": return `${e.load} run ${e.run} is due (${e.units} units)`;
@@ -252,7 +267,7 @@ function setStatus(cur) {
   const running = cur.status === "running" || cur.status === "created";
   $("statusDot").className = "dot" + (running ? " run" : cur.status === "failed" ? " bad" : "");
   $("statusText").textContent = cur.status === "idle" ? "idle" :
-    cur.status === "created" ? "starting · setting up" : `${cur.status} · ${cur.phase} · ${LK.fmtT(cur.t)}`;
+    cur.status === "created" ? "starting · setting up" : `${cur.status} · ${cur.phase} · ${LK.fmtTs(cur.t)}`;
   syncStartBtn();
   $("stopSoft").disabled = !running;
   $("stopHard").disabled = !running;
@@ -304,7 +319,7 @@ function setCursor(t) {
   if (!LK.S || LK.S.mode !== "past") return;
   LK.S.cursor = Math.min(t, LK.S.t1);
   $("replayT").value = LK.S.cursor;
-  $("replayClock").textContent = LK.S.cursor >= LK.S.t1 ? "end of run" : LK.fmtT(LK.S.cursor);
+  $("replayClock").textContent = LK.S.cursor >= LK.S.t1 ? "end of run" : LK.fmtTs(LK.S.cursor);
   renderAll(true);
 }
 

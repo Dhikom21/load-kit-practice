@@ -13,6 +13,13 @@ FILES = ("run.json", "scenario.yaml", "timeline.json", "diary.jsonl", "metrics.c
          "calibration.json", "README.txt")
 
 
+class TestPlainWords(unittest.TestCase):
+    def test_durations_keep_seconds_under_10_min(self):
+        from loadkit.export import mins
+        self.assertEqual([mins(45), mins(240), mins(270), mins(260), mins(1123)],
+                         ["45 s", "4 min", "4 min 30 s", "4 min 20 s", "19 min"])
+
+
 class TestExport(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
