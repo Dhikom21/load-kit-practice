@@ -1,136 +1,180 @@
-# Load Scenario Kit
+# Load Scenario Kit — D0020E
 
-Repeatable **resource-contention scenarios** on a real Kubernetes cluster — batch jobs, data streams and user traffic
-sharing one machine — with a **diary** of everything that happened and an after-the-run view of the **impact between loads**.
-Built for teaching (D0020E) and for testing agents and forecasters on hidden causes.
+One machine, three kinds of real work fighting over it: **batch jobs**, a **data stream** and **user traffic**.
+The kit runs a scripted, repeatable "storm" on that machine, measures everything every 15 seconds, and writes a
+**diary** of every real event *with its cause*. Your job in the course is to add the intelligence on top:
+a **scaler**, a **forecaster**, an **early-warning detector** and a **cause-finder**.
 
-## Quick start on a laptop (kind)
+**Read in this order:**
 
-Needs Docker, [kind](https://kind.sigs.k8s.io/), kubectl and Python 3.10+.
+1. [`students/PROJECT.md`](students/PROJECT.md): the big picture, why it matters, the hardware.
+2. [`students/SCENARIOS.md`](students/SCENARIOS.md): your three scenarios, step by step.
+3. [`students/TASK.md`](students/TASK.md): what you build, how it plugs in, how it is graded.
+
+---
+
+## Get started (about 15 minutes)
+
+You need **Python 3.10+** (3.12 recommended, as in the pipeline) and **Git**. No Kubernetes, no Docker: day to day,
+the kit runs on its built-in **simulated node**.
 
 ```bash
-pip install pyyaml kubernetes redis openpyxl
-make kind-up        # local cluster + metrics-server + worker image (first time only)
-make ui             # open http://127.0.0.1:8765, pick a scenario, press Start
+# 1. your group's repository
+git clone <your group's repository URL>
+cd <repository folder>
+
+# 2. a virtual environment and the packages
+python -m venv .venv
+source .venv/bin/activate            # Windows PowerShell: .venv\Scripts\Activate.ps1
+pip install pyyaml kubernetes redis openpyxl ruff coverage
+
+# 3. check that everything works: the same checks as the pipeline
+make ci-local                        # without make: see "Commands" below
 ```
 
-On another cluster (e.g. Rancher): `make image`, push the image to a registry the cluster can pull from, set
-`kubernetes.image` (and `kubernetes.node`, e.g. `role=experiment`) in `loadkit.yaml`, then
-`make ui KUBECONFIG=path/to/your/kubeconfig`. Your kubeconfig is only read, never stored.
+`make ci-local` should end with every short scenario `ok`. If it doesn't, ask before you change anything.
 
-Runs take real time: a 2-hour scenario takes 2 hours plus 7 minutes of warm-up/baseline and a short drain.
+### Your first run
 
-## What you see
-
-- **The machine** — every pod as a block on the node, pods waiting outside when there is no room, CPU and memory bars.
-- **Health of every load** — a light and one sentence per load. Nobody is labelled the victim in advance.
-- **Recent events** — the important events in plain words.
-- **Impact between loads** — after the run: likely causes, and a button to re-run the same seed without a suspect to confirm.
-- **Replay** — drag the slider to any moment of a finished run.
-- **Export to Excel** — next to the replay slider: the whole run as a workbook (summary, every event in plain words with the
-  state of the load and the machine at that moment, a 15 s timeline, health checks, settings, impact between loads).
-- **Advanced** — timeline (planned vs actual), CPU and memory per load, replicas and scaler decisions, the shop clue,
-  comparing two runs, and the full diary.
-
-## Pipeline (CI/CD)
-
-Every push runs the checks on GitHub (style, scenario files, course rules, unit tests); every pull request also gets
-a simulated comparison of all short scenarios against `main`, posted as a comment; a small real Kubernetes cluster
-runs a check every night. Details, and the one-time GitHub setup for the teacher: [`docs/CI.md`](docs/CI.md).
-Run the same checks locally with `make ci-local`.
-
-## Sharing one cluster between groups
-
-Each group sets its own name and machine in `loadkit.yaml`:
-
-```yaml
-group: g3                       # names become g3-system, g3-batch, ...; priority classes g3-high, ...
-kubernetes:
-  node: role=experiment-3       # this group's worker node (or null: the kit picks a node no other group uses)
+```bash
+python -m loadkit run idle-consumers-short --runner fake
 ```
 
-- Everything the kit creates carries the label `loadkit/group=g3`; start-up checks, clean-up and `reset` only touch
-  your own group (`reset --all-groups` is for the admin).
-- A run never starts on a node where another group's run is active; it says which group is using it.
-- Only your group's namespaces can reach your group's Redis.
-- Without `group`, the kit behaves as a single-user kit (names start with `loadkit-`), e.g. on your own laptop.
-- Recommended for the admin: give each group a kubeconfig that may only touch its own `g3-*` namespaces.
+It finishes in a few seconds and prints the run folder, e.g. `runs/idle-consumers-short-s42-fake-…/`.
+Open its **`README.txt`**: it says what ran, what happened, and when a load was unhealthy and why.
 
-## The scenarios
+### The UI
 
-**Full guide: [`docs/SCENARIOS.md`](docs/SCENARIOS.md)** — for every scenario: the story, the maths, what happens
-minute by minute, how to run it, what to look for in the UI and the Excel export, the expected result, and small
-experiments to try.
+```bash
+make ui                              # or: python -m loadkit serve
+```
 
-**Short teaching versions** (`…-short`, 20–30 min, written for a 4-core machine; about 35 min including warm-up
-and drain): `normal-day-short`, `midnight-pile-up-short`, `sensor-storm-short`, `flash-sale-short`,
-`overlapping-teams-short`, `everything-short`, `backup-snowball-short`, `idle-consumers-short` (2 partitions),
-`priority-squeeze-short`. They show the same effects as the full versions; the UI lists them first.
+Open **http://127.0.0.1:8765**. Choose a scenario and press **Start**. Without a cluster, it runs on the simulated
+node. Use **Open a past run** to see any finished run, and drag the slider to replay it. The **Advanced** panels show
+the timeline, the diary, replicas and scaler decisions, and the **Forecast** panel.
 
-**Full versions** (1–3 h):
+---
 
-| Scenario | What it shows |
+## The scenario flow
+
+You work through **three scenarios, in this order**. Each adds **exactly one new idea**:
+
+```mermaid
+flowchart LR
+  A["1 · idle-consumers-short<br/>1 load · 20 min<br/><b>lanes</b>"] --> B["2 · priority-squeeze-short<br/>2 loads · 30 min<br/><b>one CPU, two owners</b>"]
+  B --> C["3 · sensor-storm-short<br/>3 loads · 30 min<br/><b>the full picture</b>"]
+  C --> D["Final<br/>a full-length version<br/>(1–2 h)"]
+```
+
+| Step | Scenario | Loads | The one new idea | Look for |
+|---|---|---|---|---|
+| 1 | `idle-consumers-short` | stream | **Lanes**: events are spread over 2 partitions; more consumers than partitions add no speed | replicas above 2, `consumers_idle` in the diary, the backlog does not drop faster |
+| 2 | `priority-squeeze-short` | stream (high) + batch (low) | **One CPU, two owners**: when the machine is full, priority decides who yields | `consumers_scaled`, then `pod_preempted` on the ETL pods; the ETL loses its progress and takes much longer |
+| 3 | `sensor-storm-short` | stream + users + batch | **The full picture**: one load slows another indirectly | replicas jump at each burst; the shop slows down although its own traffic did not change |
+
+How to work through them:
+
+- **Develop on the short versions** (20–30 min of scenario time, written for a 4-core machine). Prove your final
+  result on the **full-length** version of one of them (`idle-consumers`, `priority-squeeze`, `sensor-storm`).
+- **The seed:** steps 1 and 2 are fixed scripts, so every run is the same run. Step 3 is the first where the seed
+  matters (it decides when the random bursts come). In class, use **seed 42**, so every group sees the same day.
+- **Read the "look for" list before a run and check it after.** It is the scenario's answer key.
+- **When a load goes red, go to the diary** (the Diary panel, or `runs/<run>/diary.jsonl`). It records every real
+  event with its cause.
+
+All details, stories and numbers: [`students/SCENARIOS.md`](students/SCENARIOS.md).
+(More scenario files live in `scenarios/advanced/`. They are not part of your experiment.)
+
+---
+
+## Your working loop
+
+```
+branch  →  write your plugin + a test  →  make ci-local  →  push  →  pull request
+        →  CI: check, test, simulate (a comment compares your change with main)  →  review  →  merge
+```
+
+- `main` is protected: you never push to it directly.
+- **The core is frozen.** Your scaler, forecaster and detectors are **plugins**. They need zero changes to the engine,
+  the runner, the worker or the pipeline. Changes there need the teacher's approval (`.github/CODEOWNERS`).
+- The worked example of a plugin, with every line explained: `loadkit/plugins/scalers/step.py`.
+- Every plugin needs a test that runs **without a cluster** (example: `tests/test_step_scaler.py`).
+
+What the pipeline runs, and how to read its results: [`docs/CI.md`](docs/CI.md).
+
+---
+
+## What a run produces
+
+Every run writes a folder `runs/<run-id>/`. This is the ground truth you are judged against.
+
+| File | What it is |
 |---|---|
-| `normal-day` | baseline: little or no contention |
-| `midnight-pile-up` | three teams' batch jobs overlap and slow each other |
-| `sensor-storm` | stream bursts; the autoscaler adds consumers on a busy node |
-| `flash-sale` | user peak + order-stream burst at the same time |
-| `overlapping-teams` | jobs every 30/45/60 min drift in and out of overlap |
-| `everything` | all load types together, mild |
-| `backup-snowball` | a backup's runs overlap and pile up after a busy period — nobody changed anything |
-| `idle-consumers` | more consumers than partitions: extra pods idle, backlog keeps growing |
-| `priority-squeeze` | a high-priority stream scales up and pushes out a low-priority batch job |
+| `README.txt` | the run in plain words: what ran, what happened, unhealthy periods and likely causes |
+| `diary.jsonl` | every event, `planned` (from the timeline), `reactive` (with a `cause`) or `control` |
+| `metrics.csv` | every metric of every load and of the machine, every 15 s |
+| `health.csv` | every health check: value, limit, healthy or not |
+| `impact.json` | the kit's own likely causes (your cause-finder is compared with it) |
+| `timeline.json`, `scenario.yaml`, `run.json`, `calibration.json` | the plan, the settings and the machine |
 
-Scenario files are YAML in `scenarios/`. A scenario + seed always gives the same **planned** events (due times, work
-units, bursts, user counts); what happens during the run is real and varies a little between runs.
+Times are `t` = seconds since the scenario started (negative during warm-up and baseline).
+In the UI, **Export to Excel** (next to the replay slider) gives the whole run as a workbook.
 
-## Command line
+---
+
+## Running on a real cluster (later)
+
+| Where | When | How |
+|---|---|---|
+| **Simulated node** | every day | nothing to set up; `--runner fake` on the command line, the default in the UI without a cluster |
+| **kind** on your laptop (optional) | if you want to see real pods | needs Docker and [kind](https://kind.sigs.k8s.io/): `make kind-up` once, then `make ui` |
+| **The shared class cluster** | finals | the teacher gives your group a kubeconfig and a node: `make ui KUBECONFIG=path/to/your-kubeconfig` |
+
+Real runs take real time: a 30-minute scenario takes about 40 minutes with warm-up and drain.
+Your kubeconfig is only read, never stored. Never commit it (the pipeline refuses it).
+
+---
+
+## Commands
 
 ```bash
-python -m loadkit validate                         # check all scenarios (no cluster needed)
-python -m loadkit timeline backup-snowball --seed 7
-python -m loadkit run backup-snowball --seed 42    # headless run -> runs/<run-id>/
-python -m loadkit run backup-snowball --seed 42 --without training   # same seed, one load removed
-python -m loadkit analyze <run> --baseline <run-without-training>   # did the slowdown disappear?
-python -m loadkit compare <run-a> <run-b>
-python -m loadkit snapshot <run>                   # one HTML file of the run to share
-python -m loadkit reset                            # delete everything the kit created on the cluster
-make test                                          # unit tests (no cluster needed)
+python -m loadkit list                                    # the scenarios you can run
+python -m loadkit run sensor-storm-short --seed 42 --runner fake   # a run on the simulated node
+python -m loadkit run sensor-storm-short --seed 42 --runner fake --without report   # the same, one load removed
+python -m loadkit timeline sensor-storm-short --seed 42   # the planned events (no run)
+python -m loadkit analyze runs/<run>                      # likely causes of a finished run
+python -m loadkit compare runs/<run-a> runs/<run-b>       # two runs side by side
+python -m loadkit snapshot runs/<run>                     # one HTML page of a run, to share
+python -m loadkit validate                                # check all scenario files
+python -m loadkit serve                                   # the UI (same as make ui)
+
+make test                                                 # unit tests (no cluster needed)
+make ci-local                                             # all pipeline checks
+make help                                                 # all make commands
 ```
 
-## What a run produces (`runs/<run-id>/`, format_version 1)
+Without `make` (e.g. on Windows), run the lines of the `ci-local` target in the `Makefile` one by one.
 
-`run.json`, `scenario.yaml`, `timeline.json` (planned events only), `diary.jsonl` (every event with
-`origin: planned | reactive | control`; reactive ones carry a `cause`), `metrics.csv` and `health.csv` (long format,
-15 s steps), `impact.json` (unhealthy periods per load + likely causes), `calibration.json`, `README.txt`.
-`t` = seconds since the scenario phase started (negative during warm-up/baseline).
+---
 
-## How it works
+## Repository map
 
-- **Engine** (your laptop, or inside the cluster): plays the planned timeline, applies each batch job's overlap rule
-  (allow / forbid / replace), runs the scalers every 15 s, checks every load's health, writes the diary.
-- **Kubernetes runner**: batch runs are Indexed Jobs; streams and the shop are Deployments; all kit pods are placed on
-  one node; priority classes high / normal / low (with or without preemption, per scenario). If the node is bigger
-  than the scenario's node size, a ballast pod uses the difference.
-- **Worker image** (`worker/`): real CPU work measured in CPU-seconds (so a work unit is the same amount of work on
-  any machine and simply takes longer when the machine is busy) and real memory.
-- **Redis** inside the cluster is the meeting point: pods read control values and write stats/heartbeats; they never
-  call the engine. From a laptop the engine reaches it through the Kubernetes API (no kubectl needed).
-
-## Plugins
-
-`loadkit.yaml` lists the enabled plugins — remove a name to switch it off: load types (`batch`, `stream`, `users`),
-runner (`kubernetes`), scalers (`target-tracking`, `concurrency`, `none`), UI panels. Code: `loadkit/plugins/`.
-
-## Status
-
-Done: scenarios, generator, engine, health, scalers, run folder, likely causes + counterfactual, compare, UI,
-worker image, Kubernetes runner. Built and unit-tested without a cluster — **the first end-to-end run on kind is the
-next step**. Later: Prometheus metrics (M7), blind naming + leak check (M7b), running the kit inside the cluster
-(M8), Rancher (M9), more scalers and forecasters. ColonyOS integration comes last.
+```
+students/        your briefs: PROJECT.md, SCENARIOS.md, TASK.md
+scenarios/       the three scenarios (short + full); advanced/ = not part of your experiment
+loadkit/         the kit (frozen core); loadkit/plugins/ = where your plugins go
+  plugins/scalers/       target-tracking, concurrency, none, step (the worked example)
+  plugins/forecasters/   reference (baseline) and timestral (the seam you complete)
+ui/              the browser UI; ui/panels/ = one file per panel
+worker/          the code that runs inside the pods (frozen)
+tests/           unit tests, all without a cluster
+ci/              the pipeline's scripts (policy, simulation)
+docs/CI.md       the pipeline, explained
+loadkit.yaml     settings and the list of enabled plugins (frozen)
+```
 
 ## Safety
 
-The kubeconfig is a run-time argument and is never stored. `runs/`, kubeconfigs and env files are git-ignored.
-The kit only creates objects labelled `app.kubernetes.io/part-of=loadkit`, every kit pod has a memory limit, and
-`make reset` removes everything. The UI server binds to 127.0.0.1.
+The kit only creates objects labelled `app.kubernetes.io/part-of=loadkit`, every pod has a memory limit, and
+`python -m loadkit reset` removes everything it made. `runs/`, kubeconfigs and env files are git-ignored. The UI only
+listens on your own computer (127.0.0.1).
